@@ -18,11 +18,12 @@ export default function ExcalidrawCanvas() {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [dragOver, setDragOver] = useState(false);
-  const { addLink, setActiveLink, links, startLinking, linkingElementId, cancelLinking, pdfUrl } =
+  const { addLink, removeLink, setActiveLink, links, startLinking, linkingElementId, cancelLinking, pdfUrl } =
     useLinkStore();
   const initialLoadDone = useRef(false);
   const prevPdfUrl = useRef<string | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const cleanupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Save scene to localStorage on changes + track selection
   const handleChange = useCallback(() => {
@@ -36,6 +37,19 @@ export default function ExcalidrawCanvas() {
 
     try {
       const elements = api.getSceneElements();
+
+      if (cleanupTimer.current) clearTimeout(cleanupTimer.current);
+      cleanupTimer.current = setTimeout(() => {
+        const currentElements = api.getSceneElements();
+        const elementIds = new Set(currentElements.map((el) => el.id));
+        const storeLinks = useLinkStore.getState().links;
+        for (const link of storeLinks) {
+          if (!elementIds.has(link.elementId)) {
+            removeLink(link.elementId);
+          }
+        }
+      }, 200);
+
       localStorage.setItem(
         SCENE_STORAGE_KEY,
         JSON.stringify({
@@ -49,7 +63,7 @@ export default function ExcalidrawCanvas() {
     } catch {
       /* ignore */
     }
-  }, [api]);
+  }, [api, removeLink]);
 
   // Load saved scene
   useEffect(() => {
@@ -130,7 +144,7 @@ export default function ExcalidrawCanvas() {
             height: imgH,
             customData: { pdfLink: linkWithoutBlob },
           },
-        ]);
+        ], { regenerateIds: false });
 
         api.updateScene({
           elements: [...api.getSceneElements(), ...newElements],
@@ -218,7 +232,7 @@ export default function ExcalidrawCanvas() {
             groupIds: [groupId],
             customData: { pdfLinkLabel: true },
           },
-        ]);
+        ], { regenerateIds: false });
 
         api.updateScene({
           elements: [...api.getSceneElements(), ...newElements],
@@ -266,7 +280,7 @@ export default function ExcalidrawCanvas() {
             groupIds: [groupId],
             customData: { pdfLinkLabel: true },
           },
-        ]);
+        ], { regenerateIds: false });
 
         api.updateScene({
           elements: [...api.getSceneElements(), ...newElements],
