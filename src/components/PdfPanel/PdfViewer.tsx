@@ -5,14 +5,19 @@ import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import PdfPage from "./PdfPage";
 import { useLinkStore } from "../../store/useLinkStore";
+import { consumePendingFile } from "../../utils/pendingFile";
 import type { PdfDeepLink } from "../../types";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 type PdfFile = { data: Uint8Array } | string;
 
-export default function PdfViewer() {
-  const { pdfUrl, setPdfUrl, links, activeLink, clearActiveLink, linkingElementId, completeLinking } =
+interface Props {
+  pdfUrl: string;
+}
+
+export default function PdfViewer({ pdfUrl }: Props) {
+  const { links, activeLink, clearActiveLink, linkingElementId, completeLinking } =
     useLinkStore();
 
   const [numPages, setNumPages] = useState(0);
@@ -30,49 +35,22 @@ export default function PdfViewer() {
 
   const highlights = links.map((l) => l.pdfLink);
 
-  const resetViewerState = useCallback(() => {
-    setPdfDocument(null);
-    setNumPages(0);
-    pageRefs.current.clear();
-  }, []);
-
-  const loadFromFile = useCallback(
-    (file: File) => {
-      resetViewerState();
+  // Pick up a file queued by ProjectPage (or load URL-based pdfUrl on mount)
+  useEffect(() => {
+    if (pdfFile) return;
+    const pending = consumePendingFile();
+    if (pending) {
       const reader = new FileReader();
       reader.onload = () => {
         if (reader.result instanceof ArrayBuffer) {
           setPdfFile({ data: new Uint8Array(reader.result) });
-          setPdfUrl(file.name);
         }
       };
-      reader.readAsArrayBuffer(file);
-    },
-    [setPdfUrl, resetViewerState],
-  );
-
-  const loadFromUrl = useCallback(
-    (url: string) => {
-      resetViewerState();
-      setPdfFile(url);
-      setPdfUrl(url);
-    },
-    [setPdfUrl, resetViewerState],
-  );
-
-  const handleFileUpload = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) loadFromFile(file);
-    },
-    [loadFromFile],
-  );
-
-  const resetPdf = useCallback(() => {
-    resetViewerState();
-    setPdfFile(null);
-    setPdfUrl(null);
-  }, [setPdfUrl, resetViewerState]);
+      reader.readAsArrayBuffer(pending);
+    } else {
+      setPdfFile(pdfUrl);
+    }
+  }, [pdfUrl, pdfFile]);
 
   const handleSelection = useCallback((_link: PdfDeepLink) => {}, []);
 
@@ -160,33 +138,10 @@ export default function PdfViewer() {
     [],
   );
 
-  if (!pdfUrl || !pdfFile) {
+  if (!pdfFile) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-8">
-        <div className="flex flex-col items-center gap-4 p-8 border-2 border-dashed border-gray-300 rounded-xl bg-white">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="12" y1="18" x2="12" y2="12" />
-            <line x1="9" y1="15" x2="15" y2="15" />
-          </svg>
-          <p className="text-gray-500 text-sm font-medium">Upload a PDF to get started</p>
-          <label className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
-            Choose PDF
-            <input
-              type="file"
-              accept=".pdf,application/pdf"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </label>
-          <button
-            onClick={() => loadFromUrl("/sample.pdf")}
-            className="text-xs text-blue-500 underline hover:text-blue-700"
-          >
-            or load sample PDF
-          </button>
-        </div>
+      <div className="flex items-center justify-center h-full bg-gray-100">
+        <div className="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -194,23 +149,11 @@ export default function PdfViewer() {
   return (
     <div className="flex flex-col h-full bg-gray-100">
       <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-200 shrink-0">
-        <label className="cursor-pointer rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors">
-          Open
-          <input
-            type="file"
-            accept=".pdf,application/pdf"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-        </label>
-
-        <span className="text-xs text-gray-400 mx-1">|</span>
-
         <button
           onClick={() => setScale((s) => Math.max(0.5, s - 0.15))}
           className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200"
         >
-          −
+          -
         </button>
         <span className="text-xs text-gray-500 tabular-nums w-10 text-center">
           {Math.round(scale * 100)}%
@@ -229,7 +172,7 @@ export default function PdfViewer() {
           disabled={currentPage <= 1}
           className="rounded bg-gray-100 px-1.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-default"
         >
-          ‹
+          &lsaquo;
         </button>
         <span className="text-xs text-gray-500 tabular-nums">
           {currentPage} / {numPages}
@@ -239,7 +182,7 @@ export default function PdfViewer() {
           disabled={currentPage >= numPages}
           className="rounded bg-gray-100 px-1.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-default"
         >
-          ›
+          &rsaquo;
         </button>
 
         <span className="text-xs text-gray-400 mx-1">|</span>
@@ -258,7 +201,7 @@ export default function PdfViewer() {
 
         {linkingElementId && (
           <span className="ml-auto text-xs font-medium text-orange-600 animate-pulse">
-            Click a position in the PDF to link…
+            Click a position in the PDF to link...
           </span>
         )}
       </div>
@@ -271,9 +214,6 @@ export default function PdfViewer() {
           error={
             <div className="flex flex-col items-center justify-center h-40 gap-2">
               <p className="text-red-500 text-sm font-medium">Failed to load PDF</p>
-              <button onClick={resetPdf} className="text-xs text-blue-600 underline">
-                Try another file
-              </button>
             </div>
           }
           loading={

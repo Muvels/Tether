@@ -18,3 +18,18 @@ export interface LinkEntry {
   elementId: string;
   pdfLink: PdfDeepLink;
 }
+
+export interface ProjectFile {
+  id: string;
+  name: string;
+  pdfUrl: string;
+  addedAt: number;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  emoji: string;
+  createdAt: number;
+  files: ProjectFile[];
+}

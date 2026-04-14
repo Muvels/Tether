@@ -10,22 +10,41 @@ import type { ExcalidrawImperativeAPI, DataURL, BinaryFileData } from "@excalidr
 import type { FileId } from "@excalidraw/excalidraw/element/types";
 import { getDragData, hasDragData } from "../../utils/dragData";
 import { useLinkStore } from "../../store/useLinkStore";
+import { useProjectStore } from "../../store/useProjectStore";
 import type { PdfDeepLink } from "../../types";
 
-const SCENE_STORAGE_KEY = "pdf-canvas-linker-scene";
+function sceneStorageKey(fileId: string | null) {
+  if (!fileId) return "pdf-canvas-scene-default";
+  return `pdf-canvas-scene-${fileId}`;
+}
 
 export default function ExcalidrawCanvas() {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [dragOver, setDragOver] = useState(false);
-  const { addLink, removeLink, setActiveLink, links, startLinking, linkingElementId, cancelLinking, pdfUrl } =
+  const { addLink, removeLink, setActiveLink, links, startLinking, linkingElementId, cancelLinking } =
     useLinkStore();
+  const activeFileId = useProjectStore((s) => s.activeFileId);
   const initialLoadDone = useRef(false);
-  const prevPdfUrl = useRef<string | null>(null);
+  const prevFileId = useRef<string | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const cleanupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Save scene to localStorage on changes + track selection
+  function loadScene(fileId: string | null) {
+    if (!api) return;
+    try {
+      const raw = localStorage.getItem(sceneStorageKey(fileId));
+      if (raw) {
+        const data = JSON.parse(raw);
+        api.updateScene({ elements: data.elements ?? [] });
+      } else {
+        api.updateScene({ elements: [] });
+      }
+    } catch {
+      api.updateScene({ elements: [] });
+    }
+  }
+
   const handleChange = useCallback(() => {
     if (!api || !initialLoadDone.current) return;
 
@@ -51,7 +70,7 @@ export default function ExcalidrawCanvas() {
       }, 200);
 
       localStorage.setItem(
-        SCENE_STORAGE_KEY,
+        sceneStorageKey(useProjectStore.getState().activeFileId),
         JSON.stringify({
           elements,
           appState: {
@@ -65,31 +84,42 @@ export default function ExcalidrawCanvas() {
     }
   }, [api, removeLink]);
 
-  // Load saved scene
+  // Load saved scene on initial mount
   useEffect(() => {
     if (!api) return;
-    try {
-      const raw = localStorage.getItem(SCENE_STORAGE_KEY);
-      if (raw) {
-        const data = JSON.parse(raw);
-        api.updateScene({
-          elements: data.elements ?? [],
-        });
-      }
-    } catch {
-      /* ignore */
-    }
+    loadScene(useProjectStore.getState().activeFileId);
+    prevFileId.current = useProjectStore.getState().activeFileId;
     initialLoadDone.current = true;
   }, [api]);
 
+  // React to file switches
   useEffect(() => {
     if (!api || !initialLoadDone.current) return;
-    if (prevPdfUrl.current !== null && pdfUrl !== prevPdfUrl.current) {
-      api.updateScene({ elements: [] });
-      localStorage.removeItem(SCENE_STORAGE_KEY);
+    if (prevFileId.current === activeFileId) return;
+
+    // Save the outgoing file's scene
+    if (prevFileId.current !== null) {
+      try {
+        const elements = api.getSceneElements();
+        const appState = api.getAppState();
+        localStorage.setItem(
+          sceneStorageKey(prevFileId.current),
+          JSON.stringify({
+            elements,
+            appState: {
+              viewBackgroundColor: appState.viewBackgroundColor,
+              gridSize: appState.gridSize,
+            },
+          }),
+        );
+      } catch {
+        /* ignore */
+      }
     }
-    prevPdfUrl.current = pdfUrl;
-  }, [api, pdfUrl]);
+
+    loadScene(activeFileId);
+    prevFileId.current = activeFileId;
+  }, [api, activeFileId]);
 
   useEffect(() => {
     if (!api || !initialLoadDone.current) return;

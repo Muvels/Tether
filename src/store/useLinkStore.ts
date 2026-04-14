@@ -1,11 +1,11 @@
 import { create } from "zustand";
 import type { PdfDeepLink, LinkEntry } from "../types";
+import { useProjectStore } from "./useProjectStore";
 
 interface LinkState {
   links: LinkEntry[];
   activeLink: PdfDeepLink | null;
   linkingElementId: string | null;
-  pdfUrl: string | null;
 
   addLink: (entry: LinkEntry) => void;
   removeLink: (elementId: string) => void;
@@ -14,41 +14,55 @@ interface LinkState {
   startLinking: (elementId: string) => void;
   cancelLinking: () => void;
   completeLinking: (pdfLink: PdfDeepLink) => void;
-  setPdfUrl: (url: string | null) => void;
   getLinkForElement: (elementId: string) => PdfDeepLink | undefined;
-  hydrate: () => void;
+  loadFile: (fileId: string | null) => void;
+  saveCurrentFile: () => void;
 }
 
-const STORAGE_KEY = "pdf-canvas-linker-state";
+function storageKey(fileId: string | null) {
+  if (!fileId) return "pdf-canvas-links-default";
+  return `pdf-canvas-links-${fileId}`;
+}
 
-function persist(state: Pick<LinkState, "links" | "pdfUrl">) {
+function persist(fileId: string | null, links: LinkEntry[]) {
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ links: state.links, pdfUrl: state.pdfUrl }),
-    );
+    localStorage.setItem(storageKey(fileId), JSON.stringify({ links }));
   } catch {
-    /* quota exceeded – silently ignore */
+    /* quota exceeded */
   }
+}
+
+function loadFromStorage(fileId: string | null): LinkEntry[] {
+  try {
+    const raw = localStorage.getItem(storageKey(fileId));
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    return data.links ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function getActiveFileId() {
+  return useProjectStore.getState().activeFileId;
 }
 
 export const useLinkStore = create<LinkState>((set, get) => ({
   links: [],
   activeLink: null,
   linkingElementId: null,
-  pdfUrl: null,
 
   addLink: (entry) =>
     set((s) => {
       const links = [...s.links.filter((l) => l.elementId !== entry.elementId), entry];
-      persist({ links, pdfUrl: s.pdfUrl });
+      persist(getActiveFileId(), links);
       return { links };
     }),
 
   removeLink: (elementId) =>
     set((s) => {
       const links = s.links.filter((l) => l.elementId !== elementId);
-      persist({ links, pdfUrl: s.pdfUrl });
+      persist(getActiveFileId(), links);
       return { links };
     }),
 
@@ -67,28 +81,20 @@ export const useLinkStore = create<LinkState>((set, get) => ({
     set({ linkingElementId: null });
   },
 
-  setPdfUrl: (url) =>
-    set((s) => {
-      const urlChanged = url !== s.pdfUrl;
-      const links = urlChanged ? [] : s.links;
-      persist({ links, pdfUrl: url });
-      return { pdfUrl: url, links, activeLink: urlChanged ? null : s.activeLink };
-    }),
-
   getLinkForElement: (elementId) =>
     get().links.find((l) => l.elementId === elementId)?.pdfLink,
 
-  hydrate: () => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      set({
-        links: data.links ?? [],
-        pdfUrl: data.pdfUrl ?? null,
-      });
-    } catch {
-      /* corrupt data – ignore */
-    }
+  saveCurrentFile: () => {
+    const { links } = get();
+    persist(getActiveFileId(), links);
+  },
+
+  loadFile: (fileId) => {
+    const links = loadFromStorage(fileId);
+    set({
+      links,
+      activeLink: null,
+      linkingElementId: null,
+    });
   },
 }));
