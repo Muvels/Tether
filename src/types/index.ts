@@ -10,7 +10,8 @@ export interface PdfDeepLink {
   page: number;
   rect: NormalizedRect;
   text?: string;
-  type: "text" | "area";
+  imageDataUrl?: string;
+  type: "text" | "area" | "image";
 }
 
 export interface LinkEntry {

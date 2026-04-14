@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Document, pdfjs } from "react-pdf";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import PdfPage from "./PdfPage";
@@ -16,6 +17,7 @@ export default function PdfViewer() {
 
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1);
+  const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [pdfFile, setPdfFile] = useState<PdfFile | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -59,6 +61,7 @@ export default function PdfViewer() {
     setPdfUrl(null);
     setPdfFile(null);
     setNumPages(0);
+    setPdfDocument(null);
   }, [setPdfUrl]);
 
   const handleSelection = useCallback((_link: PdfDeepLink) => {}, []);
@@ -175,7 +178,7 @@ export default function PdfViewer() {
       <div ref={scrollRef} className="flex-1 overflow-auto p-4">
         <Document
           file={pdfFile}
-          onLoadSuccess={({ numPages: n }) => setNumPages(n)}
+          onLoadSuccess={(doc) => { setNumPages(doc.numPages); setPdfDocument(doc); }}
           onLoadError={(error) => console.error("PDF load error:", error)}
           error={
             <div className="flex flex-col items-center justify-center h-40 gap-2">
@@ -202,6 +205,7 @@ export default function PdfViewer() {
                   activeLink={activeLink}
                   linkingMode={!!linkingElementId}
                   onLinkingClick={handleLinkingClick}
+                  pdfDocument={pdfDocument}
                 />
               </div>
             ))}

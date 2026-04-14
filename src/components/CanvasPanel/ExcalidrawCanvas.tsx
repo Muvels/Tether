@@ -6,7 +6,8 @@ import {
   viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type { ExcalidrawImperativeAPI, DataURL, BinaryFileData } from "@excalidraw/excalidraw/types";
+import type { FileId } from "@excalidraw/excalidraw/element/types";
 import { getDragData, hasDragData } from "../../utils/dragData";
 import { useLinkStore } from "../../store/useLinkStore";
 import type { PdfDeepLink } from "../../types";
@@ -83,8 +84,41 @@ export default function ExcalidrawCanvas() {
       );
 
       const elementId = crypto.randomUUID();
+      const linkWithoutBlob: PdfDeepLink = { ...pdfLink, imageDataUrl: undefined };
 
-      if (pdfLink.type === "text" && pdfLink.text) {
+      if (pdfLink.type === "image" && pdfLink.imageDataUrl) {
+        const fileId = crypto.randomUUID() as unknown as FileId;
+        const aspectRatio = pdfLink.rect.width / (pdfLink.rect.height || 1);
+        const MAX_DIM = 300;
+        const imgW = aspectRatio >= 1 ? MAX_DIM : MAX_DIM * aspectRatio;
+        const imgH = aspectRatio >= 1 ? MAX_DIM / aspectRatio : MAX_DIM;
+
+        api.addFiles([
+          {
+            id: fileId,
+            dataURL: pdfLink.imageDataUrl as DataURL,
+            mimeType: "image/png",
+            created: Date.now(),
+          } as BinaryFileData,
+        ]);
+
+        const newElements = convertToExcalidrawElements([
+          {
+            type: "image",
+            fileId,
+            id: elementId,
+            x: canvasX - imgW / 2,
+            y: canvasY - imgH / 2,
+            width: imgW,
+            height: imgH,
+            customData: { pdfLink: linkWithoutBlob },
+          },
+        ]);
+
+        api.updateScene({
+          elements: [...api.getSceneElements(), ...newElements],
+        });
+      } else if (pdfLink.type === "text" && pdfLink.text) {
         const newElements = convertToExcalidrawElements([
           {
             type: "rectangle",
@@ -98,7 +132,7 @@ export default function ExcalidrawCanvas() {
             strokeColor: "#0284c7",
             strokeWidth: 1,
             roundness: { type: 3 },
-            customData: { pdfLink },
+            customData: { pdfLink: linkWithoutBlob },
           },
           {
             type: "text",
@@ -143,7 +177,7 @@ export default function ExcalidrawCanvas() {
             strokeColor: "#d97706",
             strokeWidth: 1,
             roundness: { type: 3 },
-            customData: { pdfLink },
+            customData: { pdfLink: linkWithoutBlob },
           },
           {
             type: "text",
@@ -164,7 +198,7 @@ export default function ExcalidrawCanvas() {
         });
       }
 
-      addLink({ elementId, pdfLink });
+      addLink({ elementId, pdfLink: linkWithoutBlob });
     },
     [api, addLink],
   );
