@@ -1,8 +1,11 @@
-import { useState, useCallback, useEffect, type RefObject } from "react";
+import { useState, useCallback, useEffect, useRef, type RefObject } from "react";
 import { v4 as uuid } from "uuid";
 import type { PdfDeepLink, NormalizedRect } from "../../types";
 import { normalizeRect } from "../../utils/coordinates";
 import { setDragData } from "../../utils/dragData";
+
+const MIN_TEXT_LENGTH = 2;
+const SELECTION_SETTLE_MS = 150;
 
 interface Props {
   pageNumber: number;
@@ -18,18 +21,21 @@ export default function SelectionLayer({
   const [currentSelection, setCurrentSelection] = useState<PdfDeepLink | null>(null);
   const [areaStart, setAreaStart] = useState<{ x: number; y: number } | null>(null);
   const [areaDraft, setAreaDraft] = useState<NormalizedRect | null>(null);
+  const settleTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
-  // Text selection: listen on the container so the text layer gets events
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const onMouseUp = () => {
+    const captureSelection = () => {
       const sel = window.getSelection();
-      if (!sel || sel.isCollapsed) return;
+      if (!sel || sel.isCollapsed) {
+        setCurrentSelection(null);
+        return;
+      }
 
       const text = sel.toString().trim();
-      if (!text) return;
+      if (!text || text.length < MIN_TEXT_LENGTH) return;
 
       const range = sel.getRangeAt(0);
       const rects = range.getClientRects();
@@ -49,7 +55,11 @@ export default function SelectionLayer({
         maxY = Math.max(maxY, r.bottom);
       }
 
-      const bounding = new DOMRect(minX, minY, maxX - minX, maxY - minY);
+      const w = maxX - minX;
+      const h = maxY - minY;
+      if (w < 4 || h < 4) return;
+
+      const bounding = new DOMRect(minX, minY, w, h);
       const normalized = normalizeRect(bounding, containerRect);
 
       const link: PdfDeepLink = {
@@ -64,8 +74,16 @@ export default function SelectionLayer({
       onSelection(link);
     };
 
+    const onMouseUp = () => {
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+      settleTimer.current = setTimeout(captureSelection, SELECTION_SETTLE_MS);
+    };
+
     container.addEventListener("mouseup", onMouseUp);
-    return () => container.removeEventListener("mouseup", onMouseUp);
+    return () => {
+      container.removeEventListener("mouseup", onMouseUp);
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+    };
   }, [pageNumber, containerRef, onSelection]);
 
   // Area selection: Alt+drag on the container
@@ -162,9 +180,9 @@ export default function SelectionLayer({
           onDragEnd={() => setCurrentSelection(null)}
           className="absolute z-20 flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs text-white shadow-lg cursor-grab active:cursor-grabbing hover:bg-blue-700 transition-colors pointer-events-auto"
           style={{
-            left: `${(currentSelection.rect.x + currentSelection.rect.width) * 100}%`,
-            top: `${currentSelection.rect.y * 100}%`,
-            transform: "translate(4px, -50%)",
+            left: `${(currentSelection.rect.x + currentSelection.rect.width / 2) * 100}%`,
+            top: `${(currentSelection.rect.y + currentSelection.rect.height) * 100}%`,
+            transform: "translate(-50%, 6px)",
           }}
           title="Drag to canvas to create linked element"
         >

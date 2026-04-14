@@ -9,13 +9,29 @@ body,
   font-family: Inter, system-ui, -apple-system, sans-serif;
 }
 
+/* Make the react-pdf text layer selectable and easier to grab */
+.react-pdf__Page {
+  position: relative;
+}
+
 .react-pdf__Page__textContent {
   user-select: text !important;
   -webkit-user-select: text !important;
+  z-index: 2;
+  cursor: text;
+}
+
+.react-pdf__Page__textContent span {
+  padding: 1px 0;
+  margin: -1px 0;
+}
+
+.react-pdf__Page__textContent br {
+  display: none;
 }
 
 .react-pdf__Page__textContent span::selection {
-  background: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.35);
 }
 
 @keyframes pulse-highlight {

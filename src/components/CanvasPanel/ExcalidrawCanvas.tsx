@@ -1,5 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Excalidraw, convertToExcalidrawElements, WelcomeScreen } from "@excalidraw/excalidraw";
+import {
+  Excalidraw,
+  convertToExcalidrawElements,
+  WelcomeScreen,
+  viewportCoordsToSceneCoords,
+} from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { getDragData, hasDragData } from "../../utils/dragData";
@@ -69,18 +74,13 @@ export default function ExcalidrawCanvas() {
       e.preventDefault();
       setDragOver(false);
       const pdfLink = getDragData(e.dataTransfer);
-      if (!pdfLink || !api || !wrapperRef.current) return;
+      if (!pdfLink || !api) return;
 
-      const rect = wrapperRef.current.getBoundingClientRect();
       const appState = api.getAppState();
-
-      // Convert screen coords to canvas coords
-      const canvasX =
-        (e.clientX - rect.left - appState.offsetLeft) / appState.zoom.value +
-        appState.scrollX * -1;
-      const canvasY =
-        (e.clientY - rect.top - appState.offsetTop) / appState.zoom.value +
-        appState.scrollY * -1;
+      const { x: canvasX, y: canvasY } = viewportCoordsToSceneCoords(
+        { clientX: e.clientX, clientY: e.clientY },
+        appState,
+      );
 
       const elementId = crypto.randomUUID();
 
