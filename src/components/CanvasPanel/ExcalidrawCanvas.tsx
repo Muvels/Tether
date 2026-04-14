@@ -18,9 +18,10 @@ export default function ExcalidrawCanvas() {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [dragOver, setDragOver] = useState(false);
-  const { addLink, setActiveLink, links, startLinking, linkingElementId, cancelLinking } =
+  const { addLink, setActiveLink, links, startLinking, linkingElementId, cancelLinking, pdfUrl } =
     useLinkStore();
   const initialLoadDone = useRef(false);
+  const prevPdfUrl = useRef<string | null>(null);
 
   // Save scene to localStorage on changes
   const handleChange = useCallback(() => {
@@ -59,6 +60,15 @@ export default function ExcalidrawCanvas() {
     }
     initialLoadDone.current = true;
   }, [api]);
+
+  useEffect(() => {
+    if (!api || !initialLoadDone.current) return;
+    if (prevPdfUrl.current !== null && pdfUrl !== prevPdfUrl.current) {
+      api.updateScene({ elements: [] });
+      localStorage.removeItem(SCENE_STORAGE_KEY);
+    }
+    prevPdfUrl.current = pdfUrl;
+  }, [api, pdfUrl]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (hasDragData(e.dataTransfer)) {

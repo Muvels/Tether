@@ -17,11 +17,15 @@ export default function ImageLayer({ pageNumber, containerRef, pdfDocument }: Pr
 
   useEffect(() => {
     let cancelled = false;
-    pdfDocument.getPage(pageNumber).then((page) => {
-      extractPageImages(page).then((result) => {
+    pdfDocument
+      .getPage(pageNumber)
+      .then((page) => extractPageImages(page))
+      .then((result) => {
         if (!cancelled) setImages(result);
+      })
+      .catch(() => {
+        if (!cancelled) setImages([]);
       });
-    });
     return () => { cancelled = true; };
   }, [pdfDocument, pageNumber]);
 

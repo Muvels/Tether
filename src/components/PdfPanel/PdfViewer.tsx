@@ -27,8 +27,15 @@ export default function PdfViewer() {
 
   const highlights = links.map((l) => l.pdfLink);
 
+  const resetViewerState = useCallback(() => {
+    setPdfDocument(null);
+    setNumPages(0);
+    pageRefs.current.clear();
+  }, []);
+
   const loadFromFile = useCallback(
     (file: File) => {
+      resetViewerState();
       const reader = new FileReader();
       reader.onload = () => {
         if (reader.result instanceof ArrayBuffer) {
@@ -38,15 +45,16 @@ export default function PdfViewer() {
       };
       reader.readAsArrayBuffer(file);
     },
-    [setPdfUrl],
+    [setPdfUrl, resetViewerState],
   );
 
   const loadFromUrl = useCallback(
     (url: string) => {
+      resetViewerState();
       setPdfFile(url);
       setPdfUrl(url);
     },
-    [setPdfUrl],
+    [setPdfUrl, resetViewerState],
   );
 
   const handleFileUpload = useCallback(
@@ -58,11 +66,10 @@ export default function PdfViewer() {
   );
 
   const resetPdf = useCallback(() => {
-    setPdfUrl(null);
+    resetViewerState();
     setPdfFile(null);
-    setNumPages(0);
-    setPdfDocument(null);
-  }, [setPdfUrl]);
+    setPdfUrl(null);
+  }, [setPdfUrl, resetViewerState]);
 
   const handleSelection = useCallback((_link: PdfDeepLink) => {}, []);
 

@@ -69,8 +69,10 @@ export const useLinkStore = create<LinkState>((set, get) => ({
 
   setPdfUrl: (url) =>
     set((s) => {
-      persist({ links: s.links, pdfUrl: url });
-      return { pdfUrl: url };
+      const urlChanged = url !== s.pdfUrl;
+      const links = urlChanged ? [] : s.links;
+      persist({ links, pdfUrl: url });
+      return { pdfUrl: url, links, activeLink: urlChanged ? null : s.activeLink };
     }),
 
   getLinkForElement: (elementId) =>
