@@ -91,6 +91,27 @@ export default function ExcalidrawCanvas() {
     prevPdfUrl.current = pdfUrl;
   }, [api, pdfUrl]);
 
+  useEffect(() => {
+    if (!api || !initialLoadDone.current) return;
+    const linkedIds = new Set(links.map((l) => l.elementId));
+    const elements = api.getSceneElements();
+    let changed = false;
+    const updated = elements.map((el) => {
+      if (el.customData?.pdfLink || el.customData?.pdfLinkLabel) return el;
+
+      const isLinked = linkedIds.has(el.id);
+      const target = isLinked ? "#3b82f6" : el.strokeColor;
+      if (isLinked && el.strokeColor !== "#3b82f6") {
+        changed = true;
+        return { ...el, strokeColor: target };
+      }
+      return el;
+    });
+    if (changed) {
+      api.updateScene({ elements: updated });
+    }
+  }, [api, links]);
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (hasDragData(e.dataTransfer)) {
       e.preventDefault();

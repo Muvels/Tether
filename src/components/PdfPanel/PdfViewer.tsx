@@ -18,9 +18,12 @@ export default function PdfViewer() {
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1);
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
+  const [highlightsVisible, setHighlightsVisible] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
   const [pdfFile, setPdfFile] = useState<PdfFile | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
   const baseWidth = 600;
   const pageWidth = baseWidth * scale;
@@ -108,6 +111,55 @@ export default function PdfViewer() {
     else pageRefs.current.delete(page);
   }, []);
 
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container || numPages === 0) return;
+
+    observerRef.current?.disconnect();
+
+    const visiblePages = new Map<number, number>();
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const page = Number(entry.target.getAttribute("data-page"));
+          if (!page) continue;
+          visiblePages.set(page, entry.intersectionRatio);
+        }
+        let bestPage = 1;
+        let bestRatio = 0;
+        for (const [page, ratio] of visiblePages) {
+          if (ratio > bestRatio) {
+            bestRatio = ratio;
+            bestPage = page;
+          }
+        }
+        setCurrentPage(bestPage);
+      },
+      { root: container, threshold: [0, 0.25, 0.5, 0.75, 1] },
+    );
+
+    for (const [, el] of pageRefs.current) {
+      observerRef.current.observe(el);
+    }
+
+    return () => observerRef.current?.disconnect();
+  }, [numPages, scale]);
+
+  const goToPage = useCallback(
+    (page: number) => {
+      const el = pageRefs.current.get(page);
+      if (el && scrollRef.current) {
+        const containerRect = scrollRef.current.getBoundingClientRect();
+        const pageRect = el.getBoundingClientRect();
+        const targetY =
+          pageRect.top - containerRect.top + scrollRef.current.scrollTop - 16;
+        scrollRef.current.scrollTo({ top: targetY, behavior: "smooth" });
+      }
+    },
+    [],
+  );
+
   if (!pdfUrl || !pdfFile) {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-8">
@@ -171,9 +223,38 @@ export default function PdfViewer() {
         </button>
 
         <span className="text-xs text-gray-400 mx-1">|</span>
-        <span className="text-xs text-gray-400">
-          {numPages} page{numPages !== 1 ? "s" : ""}
+
+        <button
+          onClick={() => goToPage(currentPage - 1)}
+          disabled={currentPage <= 1}
+          className="rounded bg-gray-100 px-1.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-default"
+        >
+          ‹
+        </button>
+        <span className="text-xs text-gray-500 tabular-nums">
+          {currentPage} / {numPages}
         </span>
+        <button
+          onClick={() => goToPage(currentPage + 1)}
+          disabled={currentPage >= numPages}
+          className="rounded bg-gray-100 px-1.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-default"
+        >
+          ›
+        </button>
+
+        <span className="text-xs text-gray-400 mx-1">|</span>
+
+        <button
+          onClick={() => setHighlightsVisible((v) => !v)}
+          className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+            highlightsVisible
+              ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
+              : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+          }`}
+          title={highlightsVisible ? "Hide highlights" : "Show highlights"}
+        >
+          {highlightsVisible ? "Hide highlights" : "Show highlights"}
+        </button>
 
         {linkingElementId && (
           <span className="ml-auto text-xs font-medium text-orange-600 animate-pulse">
@@ -203,13 +284,13 @@ export default function PdfViewer() {
         >
           <div className="flex flex-col items-center gap-4">
             {Array.from({ length: numPages }, (_, i) => i + 1).map((page) => (
-              <div key={page} ref={(el) => setPageRef(page, el)}>
+              <div key={page} data-page={page} ref={(el) => setPageRef(page, el)}>
                 <PdfPage
                   pageNumber={page}
                   width={pageWidth}
                   onSelection={handleSelection}
-                  highlights={highlights}
-                  activeLink={activeLink}
+                  highlights={highlightsVisible ? highlights : []}
+                  activeLink={highlightsVisible ? activeLink : null}
                   linkingMode={!!linkingElementId}
                   onLinkingClick={handleLinkingClick}
                   pdfDocument={pdfDocument}
