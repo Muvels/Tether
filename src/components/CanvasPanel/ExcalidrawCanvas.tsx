@@ -129,43 +129,86 @@ export default function ExcalidrawCanvas() {
           elements: [...api.getSceneElements(), ...newElements],
         });
       } else if (pdfLink.type === "text" && pdfLink.text) {
+        const groupId = crypto.randomUUID();
+        const CARD_W = 280;
+        const ACCENT_W = 4;
+        const PAD_X = 18;
+        const PAD_Y = 14;
+        const TEXT_W = CARD_W - PAD_X - 14;
+        const CHARS_PER_LINE = 38;
+        const LINE_H = 14 * 1.25;
+
+        const raw = pdfLink.text.slice(0, 250);
+        const quoteText = `\u201c${raw}\u201d`;
+        const words = quoteText.split(" ");
+        const lines: string[] = [];
+        let cur = "";
+        for (const w of words) {
+          if (cur.length + w.length + 1 > CHARS_PER_LINE && cur) {
+            lines.push(cur);
+            cur = w;
+          } else {
+            cur = cur ? cur + " " + w : w;
+          }
+        }
+        if (cur) lines.push(cur);
+        const wrappedText = lines.join("\n");
+        const quoteH = lines.length * LINE_H;
+
+        const refText = `\u2014 Page ${pdfLink.page}`;
+        const REF_H = 14.4;
+        const CARD_H = PAD_Y + quoteH + 12 + REF_H + PAD_Y;
+
         const newElements = convertToExcalidrawElements([
           {
             type: "rectangle",
             id: elementId,
             x: canvasX,
             y: canvasY,
-            width: 260,
-            height: 80,
-            backgroundColor: "#e0f2fe",
+            width: CARD_W,
+            height: CARD_H,
+            backgroundColor: "#f8f9fa",
             fillStyle: "solid",
-            strokeColor: "#0284c7",
+            strokeColor: "#dee2e6",
             strokeWidth: 1,
-            roundness: { type: 3 },
+            roundness: null,
             customData: { pdfLink: linkWithoutBlob },
+            groupIds: [groupId],
+          },
+          {
+            type: "rectangle",
+            x: canvasX,
+            y: canvasY,
+            width: ACCENT_W,
+            height: CARD_H,
+            backgroundColor: "#1e1e1e",
+            fillStyle: "solid",
+            strokeColor: "#1e1e1e",
+            strokeWidth: 1,
+            roughness: 0,
+            roundness: null,
+            groupIds: [groupId],
           },
           {
             type: "text",
-            x: canvasX + 12,
-            y: canvasY + 8,
-            width: 236,
-            height: 24,
-            text: `📄 p.${pdfLink.page}`,
+            x: canvasX + PAD_X,
+            y: canvasY + PAD_Y,
+            width: TEXT_W,
+            text: wrappedText,
             fontSize: 14,
-            fontFamily: 5,
+            fontFamily: 1,
             textAlign: "left",
-            customData: { pdfLinkLabel: true },
+            groupIds: [groupId],
           },
           {
             type: "text",
-            x: canvasX + 12,
-            y: canvasY + 34,
-            width: 236,
-            height: 36,
-            text: pdfLink.text.slice(0, 120),
-            fontSize: 13,
-            fontFamily: 5,
+            x: canvasX + ACCENT_W + 10,
+            y: canvasY + CARD_H - PAD_Y - REF_H,
+            text: refText,
+            fontSize: 12,
+            fontFamily: 3,
             textAlign: "left",
+            groupIds: [groupId],
             customData: { pdfLinkLabel: true },
           },
         ]);
@@ -174,6 +217,7 @@ export default function ExcalidrawCanvas() {
           elements: [...api.getSceneElements(), ...newElements],
         });
       } else {
+        const groupId = crypto.randomUUID();
         const newElements = convertToExcalidrawElements([
           {
             type: "rectangle",
@@ -181,24 +225,38 @@ export default function ExcalidrawCanvas() {
             x: canvasX,
             y: canvasY,
             width: 160,
-            height: 50,
-            backgroundColor: "#fef3c7",
+            height: 40,
+            backgroundColor: "#f8f9fa",
             fillStyle: "solid",
-            strokeColor: "#d97706",
+            strokeColor: "#dee2e6",
             strokeWidth: 1,
-            roundness: { type: 3 },
+            roundness: null,
             customData: { pdfLink: linkWithoutBlob },
+            groupIds: [groupId],
+          },
+          {
+            type: "rectangle",
+            x: canvasX,
+            y: canvasY,
+            width: 4,
+            height: 40,
+            backgroundColor: "#1e1e1e",
+            fillStyle: "solid",
+            strokeColor: "#1e1e1e",
+            strokeWidth: 1,
+            roughness: 0,
+            roundness: null,
+            groupIds: [groupId],
           },
           {
             type: "text",
-            x: canvasX + 12,
-            y: canvasY + 14,
-            width: 136,
-            height: 22,
-            text: `📄 Area p.${pdfLink.page}`,
-            fontSize: 14,
-            fontFamily: 5,
+            x: canvasX + 18,
+            y: canvasY + 12,
+            text: `Area \u2014 Page ${pdfLink.page}`,
+            fontSize: 12,
+            fontFamily: 3,
             textAlign: "left",
+            groupIds: [groupId],
             customData: { pdfLinkLabel: true },
           },
         ]);
