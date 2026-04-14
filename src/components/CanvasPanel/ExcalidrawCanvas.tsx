@@ -22,13 +22,20 @@ export default function ExcalidrawCanvas() {
     useLinkStore();
   const initialLoadDone = useRef(false);
   const prevPdfUrl = useRef<string | null>(null);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
 
-  // Save scene to localStorage on changes
+  // Save scene to localStorage on changes + track selection
   const handleChange = useCallback(() => {
     if (!api || !initialLoadDone.current) return;
+
+    const appState = api.getAppState();
+    const selId = Object.keys(appState.selectedElementIds).find(
+      (id) => appState.selectedElementIds[id],
+    ) ?? null;
+    setSelectedElementId(selId);
+
     try {
       const elements = api.getSceneElements();
-      const appState = api.getAppState();
       localStorage.setItem(
         SCENE_STORAGE_KEY,
         JSON.stringify({
@@ -317,11 +324,6 @@ export default function ExcalidrawCanvas() {
     }
   }, [api, startLinking]);
 
-  const selectedElementId = api
-    ? Object.keys(api.getAppState().selectedElementIds).find(
-        (id) => api.getAppState().selectedElementIds[id],
-      )
-    : null;
   const selectedHasLink = selectedElementId
     ? links.some((l) => l.elementId === selectedElementId) ||
       api?.getSceneElements().find((e) => e.id === selectedElementId)?.customData?.pdfLink
@@ -333,28 +335,27 @@ export default function ExcalidrawCanvas() {
       <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-200 shrink-0">
         <span className="text-xs font-medium text-gray-500">Canvas</span>
 
-        {selectedElementId && !selectedHasLink && !linkingElementId && (
-          <>
-            <span className="text-xs text-gray-400 mx-1">|</span>
-            <button
-              onClick={handleLinkSelected}
-              className="rounded bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700 hover:bg-orange-200 transition-colors"
-            >
-              🔗 Link to PDF
-            </button>
-          </>
-        )}
+        <span className="text-xs text-gray-400 mx-1">|</span>
 
-        {linkingElementId && (
-          <>
-            <span className="text-xs text-gray-400 mx-1">|</span>
-            <button
-              onClick={cancelLinking}
-              className="rounded bg-red-100 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-200 transition-colors"
-            >
-              Cancel linking
-            </button>
-          </>
+        {linkingElementId ? (
+          <button
+            onClick={cancelLinking}
+            className="rounded bg-red-100 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-200 transition-colors"
+          >
+            Cancel linking
+          </button>
+        ) : (
+          <button
+            onClick={handleLinkSelected}
+            disabled={!selectedElementId || !!selectedHasLink}
+            className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+              selectedElementId && !selectedHasLink
+                ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                : "bg-gray-100 text-gray-400 cursor-default"
+            }`}
+          >
+            🔗 Link to PDF
+          </button>
         )}
 
         {selectedHasLink && (
