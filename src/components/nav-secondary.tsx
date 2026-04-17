@@ -20,6 +20,7 @@ export function NavSecondary({
     url: string
     icon: React.ReactNode
     badge?: React.ReactNode
+    onClick?: () => void | Promise<void>
   }[]
 } & React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
   return (
@@ -28,7 +29,11 @@ export function NavSecondary({
         <SidebarMenu>
           {items.map((item) => (
             <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton render={<a href={item.url} />}>
+              <SidebarMenuButton
+                onClick={item.onClick}
+                render={item.onClick ? undefined : <a href={item.url} />}
+                type={item.onClick ? "button" : undefined}
+              >
                 {item.icon}
                 <span>{item.title}</span>
               </SidebarMenuButton>

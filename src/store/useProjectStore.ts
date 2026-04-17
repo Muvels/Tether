@@ -1,159 +1,135 @@
 import { create } from "zustand";
 import type { Project, ProjectFile } from "../types";
 
-const STORAGE_KEY = "pdf-canvas-projects";
-
 interface ProjectState {
   projects: Project[];
   activeProjectId: string | null;
   activeFileId: string | null;
+  isHydrated: boolean;
 
-  createProject: () => string;
+  bootstrap: () => Promise<void>;
+  createProject: () => Promise<string>;
   switchProject: (id: string) => void;
-  deleteProject: (id: string) => void;
-  renameProject: (id: string, name: string) => void;
-  addFile: (projectId: string, file: ProjectFile) => void;
-  removeFile: (projectId: string, fileId: string) => void;
+  deleteProject: (id: string) => Promise<void>;
+  renameProject: (id: string, name: string) => Promise<void>;
+  addFile: (projectId: string, file: File) => Promise<ProjectFile>;
+  renameFile: (projectId: string, fileId: string, name: string) => Promise<void>;
+  removeFile: (projectId: string, fileId: string) => Promise<void>;
   openFile: (fileId: string) => void;
   closeFile: () => void;
-  hydrate: () => void;
 }
 
-function persist(state: Pick<ProjectState, "projects" | "activeProjectId" | "activeFileId">) {
-  try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        projects: state.projects,
-        activeProjectId: state.activeProjectId,
-        activeFileId: state.activeFileId,
-      }),
-    );
-  } catch {
-    /* quota exceeded */
+function getNextActiveProject(projects: Project[], preferredId: string | null) {
+  if (preferredId && projects.some((project) => project.id === preferredId)) {
+    return preferredId;
   }
+  return projects[0]?.id ?? null;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   activeProjectId: null,
   activeFileId: null,
+  isHydrated: false,
 
-  createProject: () => {
-    const id = crypto.randomUUID();
-    const project: Project = {
-      id,
-      name: "New Page",
-      emoji: "📄",
-      createdAt: Date.now(),
-      files: [],
-    };
-    set((s) => {
-      const projects = [...s.projects, project];
-      const next = { projects, activeProjectId: id, activeFileId: null };
-      persist(next);
-      return next;
+  bootstrap: async () => {
+    const snapshot = await window.desktopApi.bootstrap();
+    set({
+      projects: snapshot.projects,
+      activeProjectId: snapshot.projects[0]?.id ?? null,
+      activeFileId: null,
+      isHydrated: true,
     });
-    return id;
+  },
+
+  createProject: async () => {
+    const project = await window.desktopApi.createProject();
+    set((state) => ({
+      projects: [...state.projects, project],
+      activeProjectId: project.id,
+      activeFileId: null,
+    }));
+    return project.id;
   },
 
   switchProject: (id) => {
     const { projects } = get();
-    if (!projects.some((p) => p.id === id)) return;
+    if (!projects.some((project) => project.id === id)) return;
     set({ activeProjectId: id, activeFileId: null });
-    persist({ projects, activeProjectId: id, activeFileId: null });
   },
 
-  deleteProject: (id) =>
-    set((s) => {
-      const project = s.projects.find((p) => p.id === id);
-      const projects = s.projects.filter((p) => p.id !== id);
-      const activeProjectId =
-        s.activeProjectId === id
-          ? (projects[0]?.id ?? null)
-          : s.activeProjectId;
-      const activeFileId = s.activeProjectId === id ? null : s.activeFileId;
-      persist({ projects, activeProjectId, activeFileId });
-
-      if (project) {
-        try {
-          for (const file of project.files) {
-            localStorage.removeItem(`pdf-canvas-links-${file.id}`);
-            localStorage.removeItem(`pdf-canvas-scene-${file.id}`);
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-
-      return { projects, activeProjectId, activeFileId };
-    }),
-
-  renameProject: (id, name) =>
-    set((s) => {
-      const projects = s.projects.map((p) =>
-        p.id === id ? { ...p, name } : p,
-      );
-      persist({ projects, activeProjectId: s.activeProjectId, activeFileId: s.activeFileId });
-      return { projects };
-    }),
-
-  addFile: (projectId, file) =>
-    set((s) => {
-      const projects = s.projects.map((p) =>
-        p.id === projectId ? { ...p, files: [...p.files, file] } : p,
-      );
-      persist({ projects, activeProjectId: s.activeProjectId, activeFileId: s.activeFileId });
-      return { projects };
-    }),
-
-  removeFile: (projectId, fileId) =>
-    set((s) => {
-      const projects = s.projects.map((p) =>
-        p.id === projectId
-          ? { ...p, files: p.files.filter((f) => f.id !== fileId) }
-          : p,
-      );
-      const activeFileId = s.activeFileId === fileId ? null : s.activeFileId;
-      persist({ projects, activeProjectId: s.activeProjectId, activeFileId });
-
-      try {
-        localStorage.removeItem(`pdf-canvas-links-${fileId}`);
-        localStorage.removeItem(`pdf-canvas-scene-${fileId}`);
-      } catch {
-        /* ignore */
-      }
-
-      return { projects, activeFileId };
-    }),
-
-  openFile: (fileId) =>
-    set((s) => {
-      persist({ projects: s.projects, activeProjectId: s.activeProjectId, activeFileId: fileId });
-      return { activeFileId: fileId };
-    }),
-
-  closeFile: () =>
-    set((s) => {
-      persist({ projects: s.projects, activeProjectId: s.activeProjectId, activeFileId: null });
-      return { activeFileId: null };
-    }),
-
-  hydrate: () => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      set({
-        projects: (data.projects ?? []).map((p: Project) => ({
-          ...p,
-          files: p.files ?? [],
-        })),
-        activeProjectId: data.activeProjectId ?? null,
-        activeFileId: data.activeFileId ?? null,
-      });
-    } catch {
-      /* corrupt data */
-    }
+  deleteProject: async (id) => {
+    await window.desktopApi.deleteProject(id);
+    set((state) => {
+      const projects = state.projects.filter((project) => project.id !== id);
+      return {
+        projects,
+        activeProjectId: getNextActiveProject(
+          projects,
+          state.activeProjectId === id ? null : state.activeProjectId,
+        ),
+        activeFileId: state.activeProjectId === id ? null : state.activeFileId,
+      };
+    });
   },
+
+  renameProject: async (id, name) => {
+    await window.desktopApi.renameProject({ projectId: id, name });
+    set((state) => ({
+      projects: state.projects.map((project) =>
+        project.id === id ? { ...project, name } : project,
+      ),
+    }));
+  },
+
+  addFile: async (projectId, file) => {
+    const bytes = await file.arrayBuffer();
+    const projectFile = await window.desktopApi.importPdf({
+      projectId,
+      name: file.name,
+      bytes,
+    });
+
+    set((state) => ({
+      projects: state.projects.map((project) =>
+        project.id === projectId
+          ? { ...project, files: [...project.files, projectFile] }
+          : project,
+      ),
+    }));
+
+    return projectFile;
+  },
+
+  renameFile: async (projectId, fileId, name) => {
+    await window.desktopApi.renamePdf({ projectId, fileId, name });
+    set((state) => ({
+      projects: state.projects.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              files: project.files.map((file) =>
+                file.id === fileId ? { ...file, name } : file,
+              ),
+            }
+          : project,
+      ),
+    }));
+  },
+
+  removeFile: async (projectId, fileId) => {
+    await window.desktopApi.deletePdf({ projectId, fileId });
+    set((state) => ({
+      projects: state.projects.map((project) =>
+        project.id === projectId
+          ? { ...project, files: project.files.filter((file) => file.id !== fileId) }
+          : project,
+      ),
+      activeFileId: state.activeFileId === fileId ? null : state.activeFileId,
+    }));
+  },
+
+  openFile: (fileId) => set({ activeFileId: fileId }),
+
+  closeFile: () => set({ activeFileId: null }),
 }));

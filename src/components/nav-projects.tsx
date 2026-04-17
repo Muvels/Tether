@@ -19,6 +19,7 @@ import {
 import { PlusIcon, FileTextIcon, ChevronRightIcon } from "lucide-react"
 import { useProjectStore } from "@/store/useProjectStore"
 import { useLinkStore } from "@/store/useLinkStore"
+import { useWorkspaceNavigationGuard } from "@/hooks/useWorkspaceNavigationGuard"
 
 export function NavProjects() {
   const projects = useProjectStore((s) => s.projects)
@@ -28,35 +29,45 @@ export function NavProjects() {
   const switchProject = useProjectStore((s) => s.switchProject)
   const openFile = useProjectStore((s) => s.openFile)
   const closeFile = useProjectStore((s) => s.closeFile)
-  const saveCurrentFile = useLinkStore((s) => s.saveCurrentFile)
   const loadFile = useLinkStore((s) => s.loadFile)
+  const { guardNavigation, isNavigationBlocked } = useWorkspaceNavigationGuard()
 
   const handleCreate = () => {
-    saveCurrentFile()
-    closeFile()
-    createProject()
+    guardNavigation(async () => {
+      closeFile()
+      await loadFile(null)
+      await createProject()
+    })
   }
 
   const handleSwitchProject = (id: string) => {
     if (id === activeProjectId && !activeFileId) return
-    saveCurrentFile()
-    switchProject(id)
+    guardNavigation(async () => {
+      switchProject(id)
+      await loadFile(null)
+    })
   }
 
   const handleOpenFile = (projectId: string, fileId: string) => {
     if (fileId === activeFileId) return
-    saveCurrentFile()
-    if (projectId !== activeProjectId) {
-      switchProject(projectId)
-    }
-    openFile(fileId)
-    loadFile(fileId)
+    if (isNavigationBlocked) return
+    guardNavigation(async () => {
+      if (projectId !== activeProjectId) {
+        switchProject(projectId)
+      }
+      openFile(fileId)
+      await loadFile(fileId)
+    })
   }
 
   return (
     <SidebarGroup>
       <SidebarGroupLabel>Projects</SidebarGroupLabel>
-      <SidebarGroupAction title="Create project" onClick={handleCreate}>
+      <SidebarGroupAction
+        title="Create project"
+        onClick={handleCreate}
+        disabled={isNavigationBlocked}
+      >
         <PlusIcon />
       </SidebarGroupAction>
       <SidebarGroupContent>
@@ -70,6 +81,7 @@ export function NavProjects() {
                 <SidebarMenuButton
                   isActive={project.id === activeProjectId && !activeFileId}
                   onClick={() => handleSwitchProject(project.id)}
+                  disabled={isNavigationBlocked}
                 >
                   <span>{project.emoji}</span>
                   <span>{project.name}</span>
@@ -90,6 +102,8 @@ export function NavProjects() {
                         <SidebarMenuSubButton
                           isActive={file.id === activeFileId}
                           onClick={() => handleOpenFile(project.id, file.id)}
+                          aria-disabled={isNavigationBlocked}
+                          tabIndex={isNavigationBlocked ? -1 : undefined}
                         >
                           <FileTextIcon className="h-3.5 w-3.5 shrink-0" />
                           <span>{file.name}</span>
@@ -106,6 +120,7 @@ export function NavProjects() {
               <SidebarMenuButton
                 className="text-sidebar-foreground/50"
                 onClick={handleCreate}
+                disabled={isNavigationBlocked}
               >
                 <FileTextIcon />
                 <span>Create your first project</span>

@@ -43,8 +43,6 @@ export async function extractPageImages(
       ctm = multiply(ctm, args as number[]);
     } else if (fn === OPS.paintImageXObject || fn === OPS.paintImageXObjectRepeat) {
       const [a, , , d, e, f] = ctm;
-      const pdfW = Math.abs(a);
-      const pdfH = Math.abs(d);
 
       const [cx0, cy0] = viewport.convertToViewportPoint(e, f);
       const [cx1, cy1] = viewport.convertToViewportPoint(e + a, f + d);

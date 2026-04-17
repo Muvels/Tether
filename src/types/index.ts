@@ -19,10 +19,27 @@ export interface LinkEntry {
   pdfLink: PdfDeepLink;
 }
 
+export interface SceneFileData {
+  id: string;
+  dataURL: string;
+  mimeType: string;
+  created: number;
+  lastRetrieved?: number;
+  version?: number;
+}
+
+export interface StoredScene {
+  elements: readonly unknown[];
+  appState: {
+    viewBackgroundColor: string;
+    gridSize: number;
+  };
+  files: Record<string, SceneFileData>;
+}
+
 export interface ProjectFile {
   id: string;
   name: string;
-  pdfUrl: string;
   addedAt: number;
 }
 
@@ -32,4 +49,55 @@ export interface Project {
   emoji: string;
   createdAt: number;
   files: ProjectFile[];
+}
+
+export interface AppSnapshot {
+  projects: Project[];
+}
+
+export interface WorkspaceData {
+  pdfBytes: ArrayBuffer;
+  links: LinkEntry[];
+  scene: StoredScene | null;
+}
+
+export interface PdfDocumentLike {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<import("pdfjs-dist").PDFPageProxy>;
+}
+
+export interface ImportPdfInput {
+  projectId: string;
+  name: string;
+  bytes: ArrayBuffer;
+}
+
+export interface DeletePdfInput {
+  projectId: string;
+  fileId: string;
+}
+
+export interface RenamePdfInput {
+  projectId: string;
+  fileId: string;
+  name: string;
+}
+
+export interface RenameProjectInput {
+  projectId: string;
+  name: string;
+}
+
+export interface DesktopApi {
+  bootstrap: () => Promise<AppSnapshot>;
+  createProject: () => Promise<Project>;
+  renameProject: (input: RenameProjectInput) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
+  importPdf: (input: ImportPdfInput) => Promise<ProjectFile>;
+  renamePdf: (input: RenamePdfInput) => Promise<void>;
+  deletePdf: (input: DeletePdfInput) => Promise<void>;
+  openSavedFilesDirectory: () => Promise<string>;
+  openWorkspace: (fileId: string) => Promise<WorkspaceData>;
+  saveLinks: (fileId: string, links: LinkEntry[]) => Promise<void>;
+  saveScene: (fileId: string, scene: StoredScene | null) => Promise<void>;
 }

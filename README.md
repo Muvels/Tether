@@ -1,157 +1,181 @@
 # PDF Canvas Linker
 
-`pdf-canvas-linker` is a small MVP for source-linked thinking with PDFs.
+`pdf-canvas-linker` is now an Electron-first desktop app for working with PDFs as source material and an Excalidraw canvas as the thinking surface.
 
-It combines a PDF viewer with an [Excalidraw](https://excalidraw.com/) canvas so you can pull content out of a document, turn it into visual notes, and jump back to the original source location later.
+The app combines a PDF viewer with a linked canvas so you can pull text, image regions, and arbitrary areas out of a document, turn them into visual notes, and jump back to the exact source location later.
 
-## What It Does
+## Current Architecture
 
-- Open a local PDF or use the bundled sample PDF
-- Select text in the PDF and drag it onto the canvas
-- Alt-drag an arbitrary area on the PDF and drag that selection onto the canvas
-- Drag detected PDF images directly onto the canvas
-- Create deep links from canvas elements back to the source position in the PDF
-- Click linked canvas elements to scroll back to the referenced page area
+- Electron `main` process acts as the local backend
+- Electron `preload` exposes a typed IPC bridge at `window.desktopApi`
+- React + Vite power the renderer UI
+- PGlite stores projects, file metadata, links, and Excalidraw scenes
+- Uploaded PDFs are stored as real files in the Electron app data directory
 
-## Why This Exists
+### Local Data Layout
 
-Most PDF tools are good at reading and highlighting.
-Most canvases are good at thinking, clustering, and mapping ideas.
+The app stores data under:
 
-This project sits between those two modes:
+```text
+<userData>/app-data/
+├── db/          # PGlite data directory
+└── pdfs/        # Stored PDFs as <fileId>.pdf
+```
 
-- the PDF stays the source of truth
-- the canvas becomes the thinking surface
-- links keep both sides connected
+On macOS, `<userData>` is the standard Electron app data directory for the current user.
 
-The goal of the MVP is simple: validate whether linked PDF-to-canvas workflows feel useful for research, document review, note-making, and concept mapping.
+## Features
 
-## MVP Scope
+### Projects and Files
 
-This is intentionally narrow.
+- Create multiple projects from the sidebar
+- Rename projects inline
+- Add multiple PDFs to a project
+- Switch between files inside a project
+- Return from an open file back to the project page
 
-Current scope:
+### PDF Interaction
 
-- single-user
-- local browser storage
-- no backend
-- no auth
-- no collaboration
-- no export flow
-- no document library
+- Open stored PDFs inside a project
+- Select text in the PDF
+- `Alt` + drag to capture an arbitrary area
+- Detect and drag images from the PDF page
+- Zoom pages in and out
+- Navigate by page
+- Show or hide link highlights
 
-That is deliberate. The current version is meant to test the core interaction, not the full product surface.
+### Canvas Interaction
 
-## How It Works
+- Drop text selections to create linked quote cards
+- Drop area selections to create linked reference cards
+- Drop images to create linked image elements
+- Select an existing canvas element and manually link it to a PDF position
+- Click linked canvas elements to jump back to the referenced PDF area
 
-### PDF Side
+### Persistence
 
-- Text selection creates a draggable handle
-- `Alt` + drag creates an area selection
-- Images detected on the page can be dragged directly
-- Linked regions can be highlighted in the viewer
+- Projects persist in PGlite
+- PDF metadata persists in PGlite
+- PDF binaries persist on disk
+- File-specific links persist in PGlite
+- Excalidraw scenes persist in PGlite
+- Dropped image elements persist with their Excalidraw file payloads
 
-### Canvas Side
+## Database Shape
 
-- Dropping text creates a linked quote card
-- Dropping an image creates a linked image element
-- Dropping an area creates a linked reference card
-- Existing canvas elements can also be linked manually to a PDF location
+The desktop app initializes these tables on startup:
 
-## Tech Stack
+- `projects(id, name, emoji, created_at)`
+- `project_files(id, project_id, name, stored_rel_path, added_at, scene_elements_json, scene_app_state_json, scene_files_json)`
+- `file_links(file_id, element_id, pdf_link_json)`
 
-- React
-- TypeScript
-- Vite
-- [react-pdf](https://github.com/wojtekmaj/react-pdf)
-- [pdf.js](https://mozilla.github.io/pdf.js/)
-- [Excalidraw](https://github.com/excalidraw/excalidraw)
-- Zustand
+`project_files.project_id` and `file_links.file_id` use `ON DELETE CASCADE`.
 
-## Getting Started
+## Development
 
 ### Requirements
 
-- Node.js 20+ recommended
-- npm
+- Node.js 20+
+- `pnpm`
 
 ### Install
 
 ```bash
-npm install
+pnpm install
 ```
 
-### Run In Development
+If `pnpm` blocks Electron's install script in your environment, run:
 
 ```bash
-npm run dev
+node node_modules/electron/install.js
 ```
 
-Then open the local Vite URL shown in the terminal.
+### Start Desktop Dev Mode
+
+```bash
+pnpm dev
+```
+
+This starts:
+
+- the Vite renderer dev server
+- the Electron main/preload watcher
+- Electron pointed at the local dev server
+
+### Typecheck
+
+```bash
+pnpm typecheck
+```
+
+### Lint
+
+```bash
+pnpm lint
+```
 
 ### Build
 
 ```bash
-npm run build
+pnpm build
 ```
 
-### Preview Production Build
+This produces:
+
+- `dist/` for the renderer
+- `dist-electron/` for Electron main and preload
+
+### Package Desktop App
 
 ```bash
-npm run preview
+pnpm dist
 ```
 
-## Usage
+Packaged artifacts are written to `release/`.
 
-1. Open a PDF.
-2. Select text, an area, or drag an image from the PDF.
-3. Drop it onto the canvas to create a linked element.
-4. Select a linked canvas element to jump back to the source in the PDF.
-5. Optionally create a manual link by selecting a canvas element and using `Link to PDF`.
+## Renderer API
 
-## Persistence
+The renderer only talks to Electron through `window.desktopApi`.
 
-The app currently stores state in `localStorage`.
+Available methods:
 
-That includes:
+- `bootstrap()`
+- `createProject()`
+- `renameProject({ projectId, name })`
+- `deleteProject(projectId)`
+- `importPdf({ projectId, name, bytes })`
+- `deletePdf({ projectId, fileId })`
+- `openWorkspace(fileId)`
+- `saveLinks(fileId, links)`
+- `saveScene(fileId, scene)`
 
-- the current PDF reference
-- created PDF links
-- the Excalidraw scene
+## Repository Structure
 
-Changing to a different PDF resets the existing link context for that document session.
-
-## Known Limitations
-
-- Local-first only
-- No sync across devices
-- No multi-document workspace
-- No robust import/export for link data
-- No collaboration or comments
-- PDF handling is geared toward MVP-level interaction, not full document management
-
-## Repository
-
-```bash
+```text
 .
-├── public/                  # sample PDF + pdf worker
-├── src/components/
-│   ├── CanvasPanel/         # Excalidraw integration
-│   └── PdfPanel/            # PDF viewer, selection, highlights, image overlays
-├── src/store/               # Zustand link state
-├── src/utils/               # drag data, coordinates, PDF image helpers
-└── src/types/               # shared types
+├── electron/
+│   ├── main/                 # BrowserWindow setup, PGlite, filesystem, IPC handlers
+│   └── preload/              # contextBridge API exposed to the renderer
+├── public/                   # sample PDF and pdf.js worker
+├── src/
+│   ├── components/
+│   │   ├── CanvasPanel/      # Excalidraw integration
+│   │   ├── PdfPanel/         # PDF viewer, selection, highlights, image overlays
+│   │   └── ui/               # UI primitives
+│   ├── store/                # Zustand stores for projects and workspaces
+│   ├── types/                # shared app and IPC types
+│   └── utils/                # drag payloads, coordinates, PDF image helpers
+├── tsconfig.electron.json
+├── tsup.electron.config.ts
+└── vite.config.ts
 ```
 
-## Next Likely Steps
+## Notes
 
-If the MVP proves useful, the next logical additions would be:
-
-- better persistence per document
-- export/share flows
-- stronger linking UX
-- project-level organization
-- collaboration
+- This repo no longer targets browser-only persistence.
+- There is no migration path from the old `localStorage` MVP data.
+- The current production build passes with `pnpm build`.
+- The current lint pass succeeds with `pnpm lint`.
 
 ## License
 

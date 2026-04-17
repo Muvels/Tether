@@ -1,14 +1,13 @@
 import { useEffect, useState, useCallback, type RefObject } from "react";
 import { v4 as uuid } from "uuid";
-import type { PDFDocumentProxy } from "pdfjs-dist";
-import type { PdfDeepLink } from "../../types";
+import type { PdfDeepLink, PdfDocumentLike } from "../../types";
 import { extractPageImages, captureCanvasRegion, type PdfImageRect } from "../../utils/pdfImages";
 import { setDragData } from "../../utils/dragData";
 
 interface Props {
   pageNumber: number;
   containerRef: RefObject<HTMLDivElement | null>;
-  pdfDocument: PDFDocumentProxy;
+  pdfDocument: PdfDocumentLike;
 }
 
 export default function ImageLayer({ pageNumber, containerRef, pdfDocument }: Props) {

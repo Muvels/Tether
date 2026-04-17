@@ -12,5 +12,6 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ["pdfjs-dist"],
+    exclude: ["@electric-sql/pglite"],
   },
 });

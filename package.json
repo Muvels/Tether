@@ -2,22 +2,34 @@
   "name": "pdf-canvas-linker",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "pnpm@10.24.0",
+  "main": "dist-electron/main.cjs",
   "type": "module",
   "scripts": {
     "postinstall": "cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs",
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "concurrently -k \"pnpm:dev:renderer\" \"pnpm:dev:electron:watch\" \"pnpm:dev:electron:start\"",
+    "dev:renderer": "vite",
+    "dev:electron:watch": "tsup --config tsup.electron.config.ts --watch",
+    "dev:electron:start": "wait-on http://localhost:5173 dist-electron/main.cjs dist-electron/preload.cjs && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
+    "typecheck": "pnpm run typecheck:renderer && pnpm run typecheck:electron",
+    "typecheck:renderer": "tsc -b",
+    "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
+    "build": "pnpm run typecheck && pnpm run build:renderer && pnpm run build:electron",
+    "build:renderer": "vite build",
+    "build:electron": "tsup --config tsup.electron.config.ts",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dist": "pnpm run build && electron-builder"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.3.14",
     "@base-ui/react": "^1.4.0",
     "@excalidraw/excalidraw": "^0.18.0",
     "@fontsource-variable/geist": "^5.2.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.8.0",
-    "pdfjs-dist": "^5.4.296",
+    "pdfjs-dist": "5.4.296",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-pdf": "^10.4.1",
@@ -35,13 +47,40 @@
     "@types/react-dom": "^19.2.3",
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^37.6.0",
+    "electron-builder": "^26.0.12",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "tailwindcss": "^4.2.2",
+    "tsup": "^8.5.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",
-    "vite": "^6.4.2"
+    "vite": "^6.4.2",
+    "wait-on": "^8.0.5"
+  },
+  "build": {
+    "appId": "dev.mattemarolt.pdfcanvaslinker",
+    "productName": "PDF Canvas Linker",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "win": {
+      "target": "nsis"
+    }
   }
 }

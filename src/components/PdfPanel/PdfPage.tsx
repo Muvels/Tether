@@ -1,10 +1,9 @@
 import { useRef, useCallback } from "react";
 import { Page } from "react-pdf";
-import type { PDFDocumentProxy } from "pdfjs-dist";
 import SelectionLayer from "./SelectionLayer";
 import HighlightLayer from "./HighlightLayer";
 import ImageLayer from "./ImageLayer";
-import type { PdfDeepLink } from "../../types";
+import type { PdfDeepLink, PdfDocumentLike } from "../../types";
 
 interface Props {
   pageNumber: number;
@@ -14,7 +13,7 @@ interface Props {
   activeLink: PdfDeepLink | null;
   linkingMode: boolean;
   onLinkingClick: (link: PdfDeepLink) => void;
-  pdfDocument: PDFDocumentProxy | null;
+  pdfDocument: PdfDocumentLike | null;
 }
 
 export default function PdfPage({
@@ -51,7 +50,7 @@ export default function PdfPage({
   return (
     <div
       ref={containerRef}
-      className="relative mb-4 shadow-md"
+      className="relative mb-4 shadow-lg ring-1 ring-border rounded-sm"
       style={{ width }}
       onClick={handleClick}
     >

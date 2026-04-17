@@ -14,6 +14,10 @@ body,
   font-family: Inter, system-ui, -apple-system, sans-serif;
 }
 
+:root {
+  --app-topbar-height: 3rem;
+}
+
 /* Make the react-pdf text layer selectable and easier to grab */
 .react-pdf__Page {
   position: relative;
@@ -51,6 +55,31 @@ body,
 
 .highlight-active {
   animation: pulse-highlight 1.2s ease-in-out 3;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Electron window drag region utilities — lets the user drag the window by
+   the sidebar titlebar area while leaving interactive elements clickable. */
+.app-drag-region {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.app-no-drag,
+.app-drag-region button,
+.app-drag-region a,
+.app-drag-region input,
+.app-drag-region [role="button"] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 @theme inline {
@@ -121,13 +150,13 @@ body,
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar: oklch(93.4% 0 0);
+  --sidebar-foreground: oklch(0.205 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-accent: oklch(0.88 0 0);
+  --sidebar-accent-foreground: oklch(0.145 0 0);
+  --sidebar-border: oklch(0.9 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 }
 
@@ -159,7 +188,7 @@ body,
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent: oklch(90.06% 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
@@ -175,4 +204,52 @@ body,
   html {
     @apply font-sans;
   }
+}
+
+.excalidraw-shell .excalidraw .App-menu_top .dropdown-menu-button {
+  display: none;
+}
+
+.excalidraw-shell .excalidraw .layer-ui__library {
+  display: none;
+}
+
+.excalidraw-shell .excalidraw .library-menu-browse-button {
+  display: none;
+}
+
+.excalidraw-shell .excalidraw .default-sidebar-trigger {
+  display: none;
+}
+
+.excalidraw-shell .excalidraw .App-toolbar-content .main-menu-trigger {
+  display: none;
+}
+
+.excalidraw-shell .excalidraw .pdf-link-context-menu-item {
+  width: 100%;
+}
+
+.excalidraw-shell .excalidraw .pdf-link-context-menu-item:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.excalidraw-shell .excalidraw .FixedSideContainer_side_top {
+  top: calc(var(--app-topbar-height) + 0.25rem);
+}
+
+.excalidraw-shell .excalidraw .selected-shape-actions {
+  position: fixed;
+  top: calc(var(--app-topbar-height) + 0.25rem);
+  right: var(--editor-container-padding);
+  left: auto;
+  z-index: 5;
+}
+
+.excalidraw-shell .excalidraw .selected-shape-actions .App-menu__left {
+  position: static;
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  width: min(12.5rem, calc(100vw - (var(--editor-container-padding) * 2)));
 }
