@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontalIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { DocumentTabs } from "@/components/DocumentTabs";
 
 function MainContent() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -98,6 +99,7 @@ function MainInsetTopBar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const title = useTopBarTitle();
+  const openTabs = useProjectStore((s) => s.openTabs);
   const addFile = useProjectStore((s) => s.addFile);
   const renameFile = useProjectStore((s) => s.renameFile);
   const removeFile = useProjectStore((s) => s.removeFile);
@@ -107,14 +109,8 @@ function MainInsetTopBar() {
   const { guardNavigation, isNavigationBlocked } = useWorkspaceNavigationGuard();
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
-  const navigateToProjectPage = useCallback(() => {
-    if (!title?.fileName || isNavigationBlocked) return;
-
-    guardNavigation(async () => {
-      closeFile();
-      await loadFile(null);
-    });
-  }, [closeFile, guardNavigation, isNavigationBlocked, loadFile, title?.fileName]);
+  const hasTabs = openTabs.length > 0;
+  const onProjectPage = Boolean(title) && !title?.fileId;
 
   const handleRenameDocument = useCallback(async () => {
     if (!title?.fileId || !title.fileName) return;
@@ -162,9 +158,9 @@ function MainInsetTopBar() {
   }, [closeFile, deleteProject, guardNavigation, isNavigationBlocked, loadFile, title]);
 
   const handleUploadClick = useCallback(() => {
-    if (!title || title.fileId || isNavigationBlocked) return;
+    if (!onProjectPage || isNavigationBlocked || !title) return;
     uploadInputRef.current?.click();
-  }, [isNavigationBlocked, title]);
+  }, [isNavigationBlocked, onProjectPage, title]);
 
   const handleUploadChange = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -190,33 +186,24 @@ function MainInsetTopBar() {
     >
       {collapsed && <SidebarTrigger className="h-6 w-9 shrink-0" />}
 
-      <div className="flex min-w-0 flex-1 items-center">
-        {title ? (
-          <div className="min-w-0 truncate text-sm text-foreground">
-            {title.fileName ? (
-              <>
-                <button
-                  type="button"
-                  onClick={navigateToProjectPage}
-                  disabled={isNavigationBlocked}
-                  className="app-no-drag cursor-pointer text-muted-foreground transition-colors hover:text-foreground disabled:cursor-default disabled:opacity-60"
-                >
-                  {title.projectName}
-                </button>
-                <span className="text-muted-foreground"> / </span>
-                <span className="font-semibold text-foreground">{title.fileName}</span>
-              </>
-            ) : (
-              <span className="font-semibold text-foreground">{title.projectName}</span>
-            )}
-          </div>
-        ) : (
-          <span className="truncate text-sm text-foreground">No project selected</span>
-        )}
-      </div>
+      {hasTabs ? (
+        <DocumentTabs />
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center">
+          {title ? (
+            <span className="min-w-0 truncate text-sm font-semibold text-foreground">
+              {title.projectName}
+            </span>
+          ) : (
+            <span className="truncate text-sm text-muted-foreground">
+              No project selected
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="flex shrink-0 items-center gap-0.5">
-        {!title?.fileId && title && (
+        {onProjectPage && (
           <>
             <input
               ref={uploadInputRef}

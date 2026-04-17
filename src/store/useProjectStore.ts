@@ -1,10 +1,16 @@
 import { create } from "zustand";
 import type { Project, ProjectFile } from "../types";
 
+export interface OpenTab {
+  projectId: string;
+  fileId: string;
+}
+
 interface ProjectState {
   projects: Project[];
   activeProjectId: string | null;
   activeFileId: string | null;
+  openTabs: OpenTab[];
   isHydrated: boolean;
 
   bootstrap: () => Promise<void>;
@@ -17,6 +23,8 @@ interface ProjectState {
   removeFile: (projectId: string, fileId: string) => Promise<void>;
   openFile: (fileId: string) => void;
   closeFile: () => void;
+  closeTab: (fileId: string) => { nextProjectId: string | null; nextFileId: string | null };
+  reorderTabs: (fromIndex: number, toIndex: number) => void;
 }
 
 function getNextActiveProject(projects: Project[], preferredId: string | null) {
@@ -26,10 +34,20 @@ function getNextActiveProject(projects: Project[], preferredId: string | null) {
   return projects[0]?.id ?? null;
 }
 
+function findProjectIdForFile(projects: Project[], fileId: string): string | null {
+  for (const project of projects) {
+    if (project.files.some((file) => file.id === fileId)) {
+      return project.id;
+    }
+  }
+  return null;
+}
+
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   activeProjectId: null,
   activeFileId: null,
+  openTabs: [],
   isHydrated: false,
 
   bootstrap: async () => {
@@ -38,6 +56,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       projects: snapshot.projects,
       activeProjectId: snapshot.projects[0]?.id ?? null,
       activeFileId: null,
+      openTabs: [],
       isHydrated: true,
     });
   },
@@ -62,13 +81,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     await window.desktopApi.deleteProject(id);
     set((state) => {
       const projects = state.projects.filter((project) => project.id !== id);
+      const openTabs = state.openTabs.filter((tab) => tab.projectId !== id);
+      const wasActiveProject = state.activeProjectId === id;
       return {
         projects,
+        openTabs,
         activeProjectId: getNextActiveProject(
           projects,
-          state.activeProjectId === id ? null : state.activeProjectId,
+          wasActiveProject ? null : state.activeProjectId,
         ),
-        activeFileId: state.activeProjectId === id ? null : state.activeFileId,
+        activeFileId: wasActiveProject ? null : state.activeFileId,
       };
     });
   },
@@ -125,11 +147,76 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           ? { ...project, files: project.files.filter((file) => file.id !== fileId) }
           : project,
       ),
+      openTabs: state.openTabs.filter((tab) => tab.fileId !== fileId),
       activeFileId: state.activeFileId === fileId ? null : state.activeFileId,
     }));
   },
 
-  openFile: (fileId) => set({ activeFileId: fileId }),
+  openFile: (fileId) =>
+    set((state) => {
+      const projectId = findProjectIdForFile(state.projects, fileId);
+      if (!projectId) return state;
+
+      const alreadyOpen = state.openTabs.some((tab) => tab.fileId === fileId);
+      const openTabs = alreadyOpen
+        ? state.openTabs
+        : [...state.openTabs, { projectId, fileId }];
+
+      return {
+        openTabs,
+        activeProjectId: projectId,
+        activeFileId: fileId,
+      };
+    }),
 
   closeFile: () => set({ activeFileId: null }),
+
+  closeTab: (fileId) => {
+    const state = get();
+    const index = state.openTabs.findIndex((tab) => tab.fileId === fileId);
+    if (index === -1) {
+      return { nextProjectId: state.activeProjectId, nextFileId: state.activeFileId };
+    }
+
+    const openTabs = state.openTabs.filter((tab) => tab.fileId !== fileId);
+    const wasActive = state.activeFileId === fileId;
+
+    let nextProjectId = state.activeProjectId;
+    let nextFileId = state.activeFileId;
+
+    if (wasActive) {
+      const fallbackTab = openTabs[index] ?? openTabs[index - 1] ?? null;
+      if (fallbackTab) {
+        nextProjectId = fallbackTab.projectId;
+        nextFileId = fallbackTab.fileId;
+      } else {
+        nextFileId = null;
+      }
+    }
+
+    set({
+      openTabs,
+      activeProjectId: nextProjectId,
+      activeFileId: nextFileId,
+    });
+
+    return { nextProjectId, nextFileId };
+  },
+
+  reorderTabs: (fromIndex, toIndex) =>
+    set((state) => {
+      if (
+        fromIndex === toIndex ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= state.openTabs.length ||
+        toIndex >= state.openTabs.length
+      ) {
+        return state;
+      }
+      const openTabs = [...state.openTabs];
+      const [moved] = openTabs.splice(fromIndex, 1);
+      openTabs.splice(toIndex, 0, moved);
+      return { openTabs };
+    }),
 }));
