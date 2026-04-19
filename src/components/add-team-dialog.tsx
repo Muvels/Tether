@@ -13,49 +13,8 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import {
-  AudioLinesIcon,
-  BoxIcon,
-  BriefcaseIcon,
-  CheckIcon,
-  CodeIcon,
-  CompassIcon,
-  FeatherIcon,
-  FlameIcon,
-  GlobeIcon,
-  GraduationCapIcon,
-  HeartIcon,
-  LayersIcon,
-  LeafIcon,
-  RocketIcon,
-  ShieldIcon,
-  SparklesIcon,
-  StarIcon,
-  TerminalIcon,
-  ZapIcon,
-  type LucideIcon,
-} from "lucide-react"
-
-const ICON_OPTIONS: { id: string; label: string; Icon: LucideIcon }[] = [
-  { id: "terminal", label: "Terminal", Icon: TerminalIcon },
-  { id: "audio-lines", label: "Audio Lines", Icon: AudioLinesIcon },
-  { id: "rocket", label: "Rocket", Icon: RocketIcon },
-  { id: "sparkles", label: "Sparkles", Icon: SparklesIcon },
-  { id: "star", label: "Star", Icon: StarIcon },
-  { id: "heart", label: "Heart", Icon: HeartIcon },
-  { id: "flame", label: "Flame", Icon: FlameIcon },
-  { id: "zap", label: "Zap", Icon: ZapIcon },
-  { id: "globe", label: "Globe", Icon: GlobeIcon },
-  { id: "compass", label: "Compass", Icon: CompassIcon },
-  { id: "shield", label: "Shield", Icon: ShieldIcon },
-  { id: "leaf", label: "Leaf", Icon: LeafIcon },
-  { id: "feather", label: "Feather", Icon: FeatherIcon },
-  { id: "layers", label: "Layers", Icon: LayersIcon },
-  { id: "box", label: "Box", Icon: BoxIcon },
-  { id: "briefcase", label: "Briefcase", Icon: BriefcaseIcon },
-  { id: "code", label: "Code", Icon: CodeIcon },
-  { id: "graduation-cap", label: "Graduation Cap", Icon: GraduationCapIcon },
-]
+import { CheckIcon } from "lucide-react"
+import { WORKSPACE_ICON_OPTIONS } from "@/lib/workspace-icons"
 
 const COLOR_OPTIONS: { id: string; label: string; value: string }[] = [
   { id: "slate", label: "Slate", value: "#64748b" },
@@ -72,9 +31,9 @@ const COLOR_OPTIONS: { id: string; label: string; value: string }[] = [
   { id: "pink", label: "Pink", value: "#ec4899" },
 ]
 
-export type NewTeam = {
+export type NewWorkspace = {
   name: string
-  logo: React.ReactNode
+  icon: string
   color: string
 }
 
@@ -85,11 +44,11 @@ export function AddTeamDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreate: (team: NewTeam) => void
+  onCreate: (workspace: NewWorkspace) => void
 }) {
   const [name, setName] = React.useState("")
   const [selectedIconId, setSelectedIconId] = React.useState<string>(
-    ICON_OPTIONS[0].id
+    WORKSPACE_ICON_OPTIONS[0].id
   )
   const [selectedColorId, setSelectedColorId] = React.useState<string>(
     COLOR_OPTIONS[8].id
@@ -98,14 +57,14 @@ export function AddTeamDialog({
   React.useEffect(() => {
     if (!open) {
       setName("")
-      setSelectedIconId(ICON_OPTIONS[0].id)
+      setSelectedIconId(WORKSPACE_ICON_OPTIONS[0].id)
       setSelectedColorId(COLOR_OPTIONS[8].id)
     }
   }, [open])
 
   const selectedIcon =
-    ICON_OPTIONS.find((option) => option.id === selectedIconId) ??
-    ICON_OPTIONS[0]
+    WORKSPACE_ICON_OPTIONS.find((option) => option.id === selectedIconId) ??
+    WORKSPACE_ICON_OPTIONS[0]
   const selectedColor =
     COLOR_OPTIONS.find((option) => option.id === selectedColorId) ??
     COLOR_OPTIONS[0]
@@ -115,10 +74,9 @@ export function AddTeamDialog({
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!canSubmit) return
-    const Icon = selectedIcon.Icon
     onCreate({
       name: name.trim(),
-      logo: <Icon />,
+      icon: selectedIcon.id,
       color: selectedColor.value,
     })
     onOpenChange(false)
@@ -130,9 +88,9 @@ export function AddTeamDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create team</DialogTitle>
+          <DialogTitle>Create workspace</DialogTitle>
           <DialogDescription>
-            Give your team a name and pick an icon.
+            Give your workspace a name and pick an icon.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -146,7 +104,7 @@ export function AddTeamDialog({
             </div>
             <div className="flex min-w-0 flex-col">
               <span className="truncate text-sm font-medium text-foreground">
-                {name.trim() || "Team preview"}
+                {name.trim() || "Workspace preview"}
               </span>
               <span className="text-xs text-muted-foreground">
                 {selectedIcon.label} · {selectedColor.label}
@@ -155,15 +113,15 @@ export function AddTeamDialog({
           </div>
           <div className="flex flex-col gap-1.5">
             <label
-              htmlFor="team-name"
+              htmlFor="workspace-name"
               className="text-xs font-medium text-foreground"
             >
               Name
             </label>
             <Input
-              id="team-name"
+              id="workspace-name"
               autoFocus
-              placeholder="Acme Inc."
+              placeholder="Client PDFs"
               value={name}
               onChange={(event) => setName(event.target.value)}
               maxLength={48}
@@ -173,10 +131,10 @@ export function AddTeamDialog({
             <span className="text-xs font-medium text-foreground">Icon</span>
             <div
               role="radiogroup"
-              aria-label="Team icon"
+              aria-label="Workspace icon"
               className="grid grid-cols-6 gap-1.5"
             >
-              {ICON_OPTIONS.map(({ id, label, Icon }) => {
+              {WORKSPACE_ICON_OPTIONS.map(({ id, label, Icon }) => {
                 const isSelected = selectedIconId === id
                 return (
                   <button
@@ -206,7 +164,7 @@ export function AddTeamDialog({
             <span className="text-xs font-medium text-foreground">Color</span>
             <div
               role="radiogroup"
-              aria-label="Team icon background color"
+              aria-label="Workspace icon background color"
               className="grid grid-cols-6 gap-1.5"
             >
               {COLOR_OPTIONS.map(({ id, label, value }) => {
@@ -241,7 +199,7 @@ export function AddTeamDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={!canSubmit}>
-              Create team
+              Create workspace
             </Button>
           </DialogFooter>
         </form>

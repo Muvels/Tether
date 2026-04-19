@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useProjectStore } from "@/store/useProjectStore";
+import { selectProjects, useProjectStore } from "@/store/useProjectStore";
 import { useLinkStore } from "@/store/useLinkStore";
 import { useWorkspaceNavigationGuard } from "@/hooks/useWorkspaceNavigationGuard";
 
@@ -13,7 +13,7 @@ interface TabDescriptor {
 }
 
 export function DocumentTabs() {
-  const projects = useProjectStore((s) => s.projects);
+  const projects = useProjectStore(selectProjects);
   const openTabs = useProjectStore((s) => s.openTabs);
   const activeFileId = useProjectStore((s) => s.activeFileId);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);

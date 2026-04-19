@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AppSnapshot,
+  CreateWorkspaceInput,
   DeletePdfInput,
   DesktopApi,
   ImportPdfInput,
@@ -10,12 +11,16 @@ import type {
   RenamePdfInput,
   RenameProjectInput,
   StoredScene,
+  Workspace,
   WorkspaceData,
 } from "../../src/types";
 
 const desktopApi: DesktopApi = {
   bootstrap: () => ipcRenderer.invoke("app:bootstrap") as Promise<AppSnapshot>,
-  createProject: () => ipcRenderer.invoke("projects:create") as Promise<Project>,
+  createWorkspace: (input: CreateWorkspaceInput) =>
+    ipcRenderer.invoke("workspaces:create", input) as Promise<Workspace>,
+  createProject: (workspaceId: string) =>
+    ipcRenderer.invoke("projects:create", workspaceId) as Promise<Project>,
   renameProject: (input: RenameProjectInput) => ipcRenderer.invoke("projects:rename", input),
   deleteProject: (projectId: string) => ipcRenderer.invoke("projects:delete", projectId),
   importPdf: async (input: ImportPdfInput) =>

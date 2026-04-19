@@ -4,21 +4,37 @@ import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import type {
   AppSnapshot,
+  CreateWorkspaceInput,
   ImportPdfInput,
   LinkEntry,
   Project,
   ProjectFile,
   StoredScene,
+  Workspace,
   WorkspaceData,
 } from "../../src/types";
 
-const DEFAULT_PROJECT_NAME = "New Page";
+const DEFAULT_WORKSPACE_NAME = "Personal";
+const DEFAULT_WORKSPACE_ICON = "terminal";
+const DEFAULT_WORKSPACE_COLOR = "#3b82f6";
+const DEFAULT_WORKSPACE_PLAN = "Free";
+const DEFAULT_PROJECT_NAME = "New Project";
 const DEFAULT_PROJECT_EMOJI = "📄";
 
 type Queryable = Pick<PGlite, "exec" | "query">;
 
+interface WorkspaceRow {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  plan: string;
+  created_at: number;
+}
+
 interface ProjectRow {
   id: string;
+  workspace_id: string;
   name: string;
   emoji: string;
   created_at: number;
@@ -69,22 +85,76 @@ function mapProjectFile(row: Pick<ProjectFileRow, "id" | "name" | "added_at">): 
   };
 }
 
-function mapProjects(projectRows: ProjectRow[], fileRows: ProjectFileRow[]): Project[] {
-  return projectRows.map((projectRow) => ({
-    id: projectRow.id,
-    name: projectRow.name,
-    emoji: projectRow.emoji,
-    createdAt: projectRow.created_at,
+function mapProject(row: ProjectRow, fileRows: ProjectFileRow[]): Project {
+  return {
+    id: row.id,
+    name: row.name,
+    emoji: row.emoji,
+    createdAt: row.created_at,
     files: fileRows
-      .filter((fileRow) => fileRow.project_id === projectRow.id)
+      .filter((fileRow) => fileRow.project_id === row.id)
       .map(mapProjectFile),
+  };
+}
+
+function mapWorkspaces(
+  workspaceRows: WorkspaceRow[],
+  projectRows: ProjectRow[],
+  fileRows: ProjectFileRow[],
+): Workspace[] {
+  return workspaceRows.map((workspaceRow) => ({
+    id: workspaceRow.id,
+    name: workspaceRow.name,
+    icon: workspaceRow.icon,
+    color: workspaceRow.color,
+    plan: workspaceRow.plan,
+    createdAt: workspaceRow.created_at,
+    projects: projectRows
+      .filter((projectRow) => projectRow.workspace_id === workspaceRow.id)
+      .map((projectRow) => mapProject(projectRow, fileRows)),
   }));
+}
+
+async function ensureDefaultWorkspace(target: Queryable) {
+  const existingWorkspace = await target.query<Pick<WorkspaceRow, "id">>(
+    "SELECT id FROM workspaces ORDER BY created_at ASC LIMIT 1",
+  );
+
+  const workspaceId = existingWorkspace.rows[0]?.id ?? randomUUID();
+
+  if (existingWorkspace.rows.length === 0) {
+    await target.query(
+      `INSERT INTO workspaces (id, name, icon, color, plan, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        workspaceId,
+        DEFAULT_WORKSPACE_NAME,
+        DEFAULT_WORKSPACE_ICON,
+        DEFAULT_WORKSPACE_COLOR,
+        DEFAULT_WORKSPACE_PLAN,
+        Date.now(),
+      ],
+    );
+  }
+
+  await target.query("UPDATE projects SET workspace_id = $1 WHERE workspace_id IS NULL", [workspaceId]);
+  return workspaceId;
 }
 
 async function ensureSchema(target: Queryable) {
   await target.exec(`
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      icon TEXT NOT NULL,
+      color TEXT NOT NULL,
+      plan TEXT NOT NULL,
+      created_at BIGINT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
+      workspace_id TEXT,
       name TEXT NOT NULL,
       emoji TEXT NOT NULL,
       created_at BIGINT NOT NULL
@@ -108,11 +178,24 @@ async function ensureSchema(target: Queryable) {
       PRIMARY KEY (file_id, element_id)
     );
   `);
+
+  await target.exec(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS workspace_id TEXT;
+  `);
+
+  await ensureDefaultWorkspace(target);
+}
+
+async function getWorkspaceRows(target: Queryable) {
+  const result = await target.query<WorkspaceRow>(
+    "SELECT id, name, icon, color, plan, created_at FROM workspaces ORDER BY created_at ASC",
+  );
+  return result.rows;
 }
 
 async function getProjectRows(target: Queryable) {
   const result = await target.query<ProjectRow>(
-    "SELECT id, name, emoji, created_at FROM projects ORDER BY created_at ASC",
+    "SELECT id, workspace_id, name, emoji, created_at FROM projects ORDER BY created_at ASC",
   );
   return result.rows;
 }
@@ -161,17 +244,46 @@ export async function closeDatabase() {
 
 export async function bootstrap(): Promise<AppSnapshot> {
   const target = requireDb();
-  const [projectRows, fileRows] = await Promise.all([
+  const [workspaceRows, projectRows, fileRows] = await Promise.all([
+    getWorkspaceRows(target),
     getProjectRows(target),
     getProjectFileRows(target),
   ]);
 
   return {
-    projects: mapProjects(projectRows, fileRows),
+    workspaces: mapWorkspaces(workspaceRows, projectRows, fileRows),
   };
 }
 
-export async function createProject() {
+export async function createWorkspace(input: CreateWorkspaceInput) {
+  const target = requireDb();
+  const workspace: Workspace = {
+    id: randomUUID(),
+    name: input.name,
+    icon: input.icon,
+    color: input.color,
+    plan: DEFAULT_WORKSPACE_PLAN,
+    createdAt: Date.now(),
+    projects: [],
+  };
+
+  await target.query(
+    `INSERT INTO workspaces (id, name, icon, color, plan, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      workspace.id,
+      workspace.name,
+      workspace.icon,
+      workspace.color,
+      workspace.plan,
+      workspace.createdAt,
+    ],
+  );
+
+  return workspace;
+}
+
+export async function createProject(workspaceId: string) {
   const target = requireDb();
   const project: Project = {
     id: randomUUID(),
@@ -182,8 +294,8 @@ export async function createProject() {
   };
 
   await target.query(
-    "INSERT INTO projects (id, name, emoji, created_at) VALUES ($1, $2, $3, $4)",
-    [project.id, project.name, project.emoji, project.createdAt],
+    "INSERT INTO projects (id, workspace_id, name, emoji, created_at) VALUES ($1, $2, $3, $4, $5)",
+    [project.id, workspaceId, project.name, project.emoji, project.createdAt],
   );
 
   return project;

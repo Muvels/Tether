@@ -3,6 +3,7 @@ import { app, BrowserWindow, ipcMain, shell } from "electron";
 import {
   bootstrap,
   closeDatabase,
+  createWorkspace,
   createProject,
   deletePdf,
   deleteProject,
@@ -32,7 +33,8 @@ function registerIpcHandlers() {
 
     return directoryPath;
   });
-  ipcMain.handle("projects:create", () => createProject());
+  ipcMain.handle("workspaces:create", (_event, input) => createWorkspace(input));
+  ipcMain.handle("projects:create", (_event, workspaceId: string) => createProject(workspaceId));
   ipcMain.handle("projects:rename", (_event, input: { projectId: string; name: string }) =>
     renameProject(input.projectId, input.name),
   );

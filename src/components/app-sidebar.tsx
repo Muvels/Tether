@@ -5,8 +5,7 @@ import * as React from "react"
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavProjects } from "@/components/nav-projects"
-import { TeamSwitcher, type Team } from "@/components/team-switcher"
-import type { NewTeam } from "@/components/add-team-dialog"
+import { TeamSwitcher } from "@/components/team-switcher"
 import {
   Sidebar,
   SidebarContent,
@@ -17,34 +16,14 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import {
-  TerminalIcon,
-  AudioLinesIcon,
   SearchIcon,
   Settings2Icon,
   MessageCircleQuestionIcon,
   FolderOpenIcon,
 } from "lucide-react"
-
-const initialTeams: Team[] = [
-  {
-    name: "Acme Inc",
-    logo: <TerminalIcon />,
-    plan: "Enterprise",
-    color: "#3b82f6",
-  },
-  {
-    name: "Acme Corp.",
-    logo: <AudioLinesIcon />,
-    plan: "Startup",
-    color: "#8b5cf6",
-  },
-  {
-    name: "Evil Corp.",
-    logo: <TerminalIcon />,
-    plan: "Free",
-    color: "#ef4444",
-  },
-]
+import { useProjectStore } from "@/store/useProjectStore"
+import { useLinkStore } from "@/store/useLinkStore"
+import { useWorkspaceNavigationGuard } from "@/hooks/useWorkspaceNavigationGuard"
 
 const data = {
   navMain: [
@@ -87,27 +66,60 @@ function SidebarTitlebar() {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const [teams, setTeams] = React.useState<Team[]>(initialTeams)
+  const workspaces = useProjectStore((s) => s.workspaces)
+  const activeWorkspaceId = useProjectStore((s) => s.activeWorkspaceId)
+  const createWorkspace = useProjectStore((s) => s.createWorkspace)
+  const switchWorkspace = useProjectStore((s) => s.switchWorkspace)
+  const closeFile = useProjectStore((s) => s.closeFile)
+  const loadFile = useLinkStore((s) => s.loadFile)
+  const { guardNavigation, isNavigationBlocked } = useWorkspaceNavigationGuard()
 
-  const handleAddTeam = React.useCallback((team: NewTeam) => {
-    setTeams((prev) => {
-      let candidate = team.name
+  const handleSwitchWorkspace = React.useCallback(
+    (workspaceId: string) => {
+      if (workspaceId === activeWorkspaceId || isNavigationBlocked) return
+
+      guardNavigation(async () => {
+        closeFile()
+        await loadFile(null)
+        switchWorkspace(workspaceId)
+      })
+    },
+    [
+      activeWorkspaceId,
+      closeFile,
+      guardNavigation,
+      isNavigationBlocked,
+      loadFile,
+      switchWorkspace,
+    ]
+  )
+
+  const handleCreateWorkspace = React.useCallback(
+    (workspace: { name: string; icon: string; color: string }) => {
+      if (isNavigationBlocked) return
+
+      let candidate = workspace.name
       let suffix = 2
-      const existing = new Set(prev.map((t) => t.name))
+      const existing = new Set(workspaces.map((entry) => entry.name))
       while (existing.has(candidate)) {
-        candidate = `${team.name} (${suffix++})`
+        candidate = `${workspace.name} (${suffix++})`
       }
-      return [
-        ...prev,
-        {
-          name: candidate,
-          logo: team.logo,
-          plan: "Free",
-          color: team.color,
-        },
-      ]
-    })
-  }, [])
+
+      guardNavigation(async () => {
+        closeFile()
+        await loadFile(null)
+        await createWorkspace({ ...workspace, name: candidate })
+      })
+    },
+    [
+      closeFile,
+      createWorkspace,
+      guardNavigation,
+      isNavigationBlocked,
+      loadFile,
+      workspaces,
+    ]
+  )
 
   const openSavedFilesDirectory = React.useCallback(async () => {
     try {
@@ -144,7 +156,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarFooter className="gap-0 p-0">
           <NavSecondary items={navSecondary} className="px-2 py-1" />
           <div className="px-2 pb-2">
-            <TeamSwitcher teams={teams} onAddTeam={handleAddTeam} />
+            <TeamSwitcher
+              workspaces={workspaces}
+              activeWorkspaceId={activeWorkspaceId}
+              disabled={isNavigationBlocked}
+              onSwitchWorkspace={handleSwitchWorkspace}
+              onCreateWorkspace={handleCreateWorkspace}
+            />
           </div>
         </SidebarFooter>
       </div>

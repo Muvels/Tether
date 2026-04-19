@@ -51,8 +51,18 @@ export interface Project {
   files: ProjectFile[];
 }
 
-export interface AppSnapshot {
+export interface Workspace {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  plan: string;
+  createdAt: number;
   projects: Project[];
+}
+
+export interface AppSnapshot {
+  workspaces: Workspace[];
 }
 
 export interface WorkspaceData {
@@ -88,9 +98,16 @@ export interface RenameProjectInput {
   name: string;
 }
 
+export interface CreateWorkspaceInput {
+  name: string;
+  icon: string;
+  color: string;
+}
+
 export interface DesktopApi {
   bootstrap: () => Promise<AppSnapshot>;
-  createProject: () => Promise<Project>;
+  createWorkspace: (input: CreateWorkspaceInput) => Promise<Workspace>;
+  createProject: (workspaceId: string) => Promise<Project>;
   renameProject: (input: RenameProjectInput) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   importPdf: (input: ImportPdfInput) => Promise<ProjectFile>;

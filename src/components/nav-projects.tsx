@@ -13,12 +13,12 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { PlusIcon, FileTextIcon, ChevronDownIcon } from "lucide-react"
-import { useProjectStore } from "@/store/useProjectStore"
+import { selectProjects, useProjectStore } from "@/store/useProjectStore"
 import { useLinkStore } from "@/store/useLinkStore"
 import { useWorkspaceNavigationGuard } from "@/hooks/useWorkspaceNavigationGuard"
 
 export function NavProjects() {
-  const projects = useProjectStore((s) => s.projects)
+  const projects = useProjectStore(selectProjects)
   const activeProjectId = useProjectStore((s) => s.activeProjectId)
   const activeFileId = useProjectStore((s) => s.activeFileId)
   const dirtyFileIds = useLinkStore((s) => s.dirtyFileIds)

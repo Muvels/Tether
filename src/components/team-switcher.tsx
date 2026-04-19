@@ -18,39 +18,36 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { ChevronDownIcon, PlusIcon } from "lucide-react"
-import { AddTeamDialog, type NewTeam } from "@/components/add-team-dialog"
-
-export type Team = {
-  name: string
-  logo: React.ReactNode
-  plan: string
-  color?: string
-}
+import { AddTeamDialog, type NewWorkspace } from "@/components/add-team-dialog"
+import { getWorkspaceIcon } from "@/lib/workspace-icons"
+import type { Workspace } from "@/types"
 
 export function TeamSwitcher({
-  teams,
-  onAddTeam,
+  workspaces,
+  activeWorkspaceId,
+  disabled,
+  onSwitchWorkspace,
+  onCreateWorkspace,
 }: {
-  teams: Team[]
-  onAddTeam?: (team: NewTeam) => void
+  workspaces: Workspace[]
+  activeWorkspaceId: string | null
+  disabled?: boolean
+  onSwitchWorkspace?: (workspaceId: string) => void
+  onCreateWorkspace?: (workspace: NewWorkspace) => void
 }) {
-  const [activeTeamName, setActiveTeamName] = React.useState<string | null>(
-    teams[0]?.name ?? null
-  )
   const [dialogOpen, setDialogOpen] = React.useState(false)
 
-  const activeTeam =
-    teams.find((team) => team.name === activeTeamName) ?? teams[0]
+  const activeWorkspace =
+    workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0]
 
   const handleCreate = React.useCallback(
-    (team: NewTeam) => {
-      onAddTeam?.(team)
-      setActiveTeamName(team.name)
+    (workspace: NewWorkspace) => {
+      onCreateWorkspace?.(workspace)
     },
-    [onAddTeam]
+    [onCreateWorkspace]
   )
 
-  if (!activeTeam) {
+  if (!activeWorkspace) {
     return null
   }
 
@@ -60,22 +57,21 @@ export function TeamSwitcher({
         <SidebarMenuItem>
           <DropdownMenu>
             <DropdownMenuTrigger
-              render={<SidebarMenuButton className="w-fit px-1.5" />}
+              disabled={disabled}
+              render={<SidebarMenuButton className="w-fit px-1.5" disabled={disabled} />}
             >
               <div
                 className="flex aspect-square size-5 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground"
-                style={
-                  activeTeam.color
-                    ? {
-                        backgroundColor: activeTeam.color,
-                        color: "#ffffff",
-                      }
-                    : undefined
-                }
+                style={{
+                  backgroundColor: activeWorkspace.color,
+                  color: "#ffffff",
+                }}
               >
-                {activeTeam.logo}
+                {React.createElement(getWorkspaceIcon(activeWorkspace.icon), {
+                  className: "size-4",
+                })}
               </div>
-              <span className="truncate font-medium">{activeTeam.name}</span>
+              <span className="truncate font-medium">{activeWorkspace.name}</span>
               <ChevronDownIcon className="opacity-50" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -86,44 +82,45 @@ export function TeamSwitcher({
             >
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="text-xs text-muted-foreground">
-                  Teams
+                  Workspaces
                 </DropdownMenuLabel>
-                {teams.map((team, index) => (
-                  <DropdownMenuItem
-                    key={team.name}
-                    onClick={() => setActiveTeamName(team.name)}
-                    className="gap-2 p-2"
-                  >
-                    <div
-                      className="flex size-6 items-center justify-center rounded-xs border"
-                      style={
-                        team.color
-                          ? {
-                              backgroundColor: team.color,
-                              color: "#ffffff",
-                              borderColor: "transparent",
-                            }
-                          : undefined
-                      }
+                {workspaces.map((workspace, index) => {
+                  return (
+                    <DropdownMenuItem
+                      key={workspace.id}
+                      onClick={() => onSwitchWorkspace?.(workspace.id)}
+                      className="gap-2 p-2"
                     >
-                      {team.logo}
-                    </div>
-                    {team.name}
-                    <DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>
-                  </DropdownMenuItem>
-                ))}
+                      <div
+                        className="flex size-6 items-center justify-center rounded-xs border"
+                        style={{
+                          backgroundColor: workspace.color,
+                          color: "#ffffff",
+                          borderColor: "transparent",
+                        }}
+                      >
+                        {React.createElement(getWorkspaceIcon(workspace.icon), {
+                          className: "size-4",
+                        })}
+                      </div>
+                      {workspace.name}
+                      <DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                  )
+                })}
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem
                   className="gap-2 p-2"
+                  disabled={disabled}
                   onClick={() => setDialogOpen(true)}
                 >
                   <div className="flex size-6 items-center justify-center rounded-md border bg-background">
                     <PlusIcon className="size-4" />
                   </div>
                   <div className="font-medium text-muted-foreground">
-                    Add team
+                    Add workspace
                   </div>
                 </DropdownMenuItem>
               </DropdownMenuGroup>

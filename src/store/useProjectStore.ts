@@ -1,19 +1,29 @@
 import { create } from "zustand";
-import type { Project, ProjectFile } from "../types";
+import type {
+  CreateWorkspaceInput,
+  Project,
+  ProjectFile,
+  Workspace,
+} from "../types";
 
 export interface OpenTab {
   projectId: string;
   fileId: string;
 }
 
+const EMPTY_PROJECTS: Project[] = [];
+
 interface ProjectState {
-  projects: Project[];
+  workspaces: Workspace[];
+  activeWorkspaceId: string | null;
   activeProjectId: string | null;
   activeFileId: string | null;
   openTabs: OpenTab[];
   isHydrated: boolean;
 
   bootstrap: () => Promise<void>;
+  createWorkspace: (input: CreateWorkspaceInput) => Promise<string>;
+  switchWorkspace: (id: string) => void;
   createProject: () => Promise<string>;
   switchProject: (id: string) => void;
   deleteProject: (id: string) => Promise<void>;
@@ -25,6 +35,15 @@ interface ProjectState {
   closeFile: () => void;
   closeTab: (fileId: string) => { nextProjectId: string | null; nextFileId: string | null };
   reorderTabs: (fromIndex: number, toIndex: number) => void;
+}
+
+function getWorkspaceById(workspaces: Workspace[], workspaceId: string | null) {
+  if (!workspaceId) return null;
+  return workspaces.find((workspace) => workspace.id === workspaceId) ?? null;
+}
+
+function getProjectsForWorkspace(workspaces: Workspace[], workspaceId: string | null) {
+  return getWorkspaceById(workspaces, workspaceId)?.projects ?? EMPTY_PROJECTS;
 }
 
 function getNextActiveProject(projects: Project[], preferredId: string | null) {
@@ -43,8 +62,47 @@ function findProjectIdForFile(projects: Project[], fileId: string): string | nul
   return null;
 }
 
+function updateWorkspace(
+  workspaces: Workspace[],
+  workspaceId: string,
+  updater: (workspace: Workspace) => Workspace,
+) {
+  return workspaces.map((workspace) =>
+    workspace.id === workspaceId ? updater(workspace) : workspace,
+  );
+}
+
+function updateProjectInWorkspaces(
+  workspaces: Workspace[],
+  projectId: string,
+  updater: (project: Project) => Project,
+) {
+  return workspaces.map((workspace) => ({
+    ...workspace,
+    projects: workspace.projects.map((project) =>
+      project.id === projectId ? updater(project) : project,
+    ),
+  }));
+}
+
+function removeProjectFromWorkspaces(workspaces: Workspace[], projectId: string) {
+  return workspaces.map((workspace) => ({
+    ...workspace,
+    projects: workspace.projects.filter((project) => project.id !== projectId),
+  }));
+}
+
+export function selectActiveWorkspace(state: Pick<ProjectState, "workspaces" | "activeWorkspaceId">) {
+  return getWorkspaceById(state.workspaces, state.activeWorkspaceId);
+}
+
+export function selectProjects(state: Pick<ProjectState, "workspaces" | "activeWorkspaceId">) {
+  return getProjectsForWorkspace(state.workspaces, state.activeWorkspaceId);
+}
+
 export const useProjectStore = create<ProjectState>((set, get) => ({
-  projects: [],
+  workspaces: [],
+  activeWorkspaceId: null,
   activeProjectId: null,
   activeFileId: null,
   openTabs: [],
@@ -52,19 +110,58 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   bootstrap: async () => {
     const snapshot = await window.desktopApi.bootstrap();
+    const activeWorkspaceId = snapshot.workspaces[0]?.id ?? null;
+    const projects = getProjectsForWorkspace(snapshot.workspaces, activeWorkspaceId);
+
     set({
-      projects: snapshot.projects,
-      activeProjectId: snapshot.projects[0]?.id ?? null,
+      workspaces: snapshot.workspaces,
+      activeWorkspaceId,
+      activeProjectId: projects[0]?.id ?? null,
       activeFileId: null,
       openTabs: [],
       isHydrated: true,
     });
   },
 
-  createProject: async () => {
-    const project = await window.desktopApi.createProject();
+  createWorkspace: async (input) => {
+    const workspace = await window.desktopApi.createWorkspace(input);
     set((state) => ({
-      projects: [...state.projects, project],
+      workspaces: [...state.workspaces, workspace],
+      activeWorkspaceId: workspace.id,
+      activeProjectId: null,
+      activeFileId: null,
+      openTabs: [],
+    }));
+    return workspace.id;
+  },
+
+  switchWorkspace: (id) =>
+    set((state) => {
+      if (id === state.activeWorkspaceId) return state;
+
+      const workspace = getWorkspaceById(state.workspaces, id);
+      if (!workspace) return state;
+
+      return {
+        activeWorkspaceId: workspace.id,
+        activeProjectId: getNextActiveProject(workspace.projects, null),
+        activeFileId: null,
+        openTabs: [],
+      };
+    }),
+
+  createProject: async () => {
+    const { activeWorkspaceId } = get();
+    if (!activeWorkspaceId) {
+      throw new Error("Cannot create a project without an active workspace");
+    }
+
+    const project = await window.desktopApi.createProject(activeWorkspaceId);
+    set((state) => ({
+      workspaces: updateWorkspace(state.workspaces, activeWorkspaceId, (workspace) => ({
+        ...workspace,
+        projects: [...workspace.projects, project],
+      })),
       activeProjectId: project.id,
       activeFileId: null,
     }));
@@ -72,7 +169,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   switchProject: (id) => {
-    const { projects } = get();
+    const { workspaces, activeWorkspaceId } = get();
+    const projects = getProjectsForWorkspace(workspaces, activeWorkspaceId);
     if (!projects.some((project) => project.id === id)) return;
     set({ activeProjectId: id, activeFileId: null });
   },
@@ -80,11 +178,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   deleteProject: async (id) => {
     await window.desktopApi.deleteProject(id);
     set((state) => {
-      const projects = state.projects.filter((project) => project.id !== id);
+      const workspaces = removeProjectFromWorkspaces(state.workspaces, id);
+      const projects = getProjectsForWorkspace(workspaces, state.activeWorkspaceId);
       const openTabs = state.openTabs.filter((tab) => tab.projectId !== id);
       const wasActiveProject = state.activeProjectId === id;
+
       return {
-        projects,
+        workspaces,
         openTabs,
         activeProjectId: getNextActiveProject(
           projects,
@@ -98,7 +198,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   renameProject: async (id, name) => {
     await window.desktopApi.renameProject({ projectId: id, name });
     set((state) => ({
-      projects: state.projects.map((project) =>
+      workspaces: updateProjectInWorkspaces(state.workspaces, id, (project) =>
         project.id === id ? { ...project, name } : project,
       ),
     }));
@@ -113,7 +213,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     });
 
     set((state) => ({
-      projects: state.projects.map((project) =>
+      workspaces: updateProjectInWorkspaces(state.workspaces, projectId, (project) =>
         project.id === projectId
           ? { ...project, files: [...project.files, projectFile] }
           : project,
@@ -126,7 +226,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   renameFile: async (projectId, fileId, name) => {
     await window.desktopApi.renamePdf({ projectId, fileId, name });
     set((state) => ({
-      projects: state.projects.map((project) =>
+      workspaces: updateProjectInWorkspaces(state.workspaces, projectId, (project) =>
         project.id === projectId
           ? {
               ...project,
@@ -142,7 +242,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   removeFile: async (projectId, fileId) => {
     await window.desktopApi.deletePdf({ projectId, fileId });
     set((state) => ({
-      projects: state.projects.map((project) =>
+      workspaces: updateProjectInWorkspaces(state.workspaces, projectId, (project) =>
         project.id === projectId
           ? { ...project, files: project.files.filter((file) => file.id !== fileId) }
           : project,
@@ -154,7 +254,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   openFile: (fileId) =>
     set((state) => {
-      const projectId = findProjectIdForFile(state.projects, fileId);
+      const projectId = findProjectIdForFile(
+        getProjectsForWorkspace(state.workspaces, state.activeWorkspaceId),
+        fileId,
+      );
       if (!projectId) return state;
 
       const alreadyOpen = state.openTabs.some((tab) => tab.fileId === fileId);
@@ -190,6 +293,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         nextProjectId = fallbackTab.projectId;
         nextFileId = fallbackTab.fileId;
       } else {
+        nextProjectId = getNextActiveProject(
+          getProjectsForWorkspace(state.workspaces, state.activeWorkspaceId),
+          state.activeProjectId,
+        );
         nextFileId = null;
       }
     }

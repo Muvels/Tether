@@ -4,7 +4,7 @@ import Layout from "./components/Layout";
 import PdfViewer from "./components/PdfPanel/PdfViewer";
 import ExcalidrawCanvas from "./components/CanvasPanel/ExcalidrawCanvas";
 import ProjectPage from "./components/ProjectPage";
-import { useProjectStore } from "./store/useProjectStore";
+import { selectProjects, useProjectStore } from "./store/useProjectStore";
 import { useLinkStore } from "./store/useLinkStore";
 import {
   SidebarInset,
@@ -30,7 +30,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 function MainContent() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeFileId = useProjectStore((s) => s.activeFileId);
-  const projects = useProjectStore((s) => s.projects);
+  const projects = useProjectStore(selectProjects);
   const isHydrated = useProjectStore((s) => s.isHydrated);
 
   if (!isHydrated) {
@@ -63,7 +63,7 @@ function MainContent() {
 function useTopBarTitle() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeFileId = useProjectStore((s) => s.activeFileId);
-  const projects = useProjectStore((s) => s.projects);
+  const projects = useProjectStore(selectProjects);
 
   const project = projects.find((p) => p.id === activeProjectId);
   if (!project) {
@@ -166,7 +166,8 @@ function MainInsetTopBar() {
     guardNavigation(async () => {
       const project = useProjectStore
         .getState()
-        .projects.find((candidate) => candidate.id === title.projectId);
+        .workspaces.flatMap((workspace) => workspace.projects)
+        .find((candidate) => candidate.id === title.projectId);
 
       closeFile();
       await loadFile(null);

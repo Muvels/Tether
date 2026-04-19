@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useLinkStore } from "@/store/useLinkStore";
-import { useProjectStore } from "@/store/useProjectStore";
+import { selectProjects, useProjectStore } from "@/store/useProjectStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWorkspaceNavigationGuard } from "@/hooks/useWorkspaceNavigationGuard";
@@ -382,7 +382,7 @@ function ProjectContent({ project }: { project: Project }) {
 
 export default function ProjectPage() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
-  const projects = useProjectStore((s) => s.projects);
+  const projects = useProjectStore(selectProjects);
   const project = projects.find((candidate) => candidate.id === activeProjectId);
 
   if (!project) {
