@@ -281,11 +281,18 @@ export default function ExcalidrawCanvas() {
       );
 
       const elementId = crypto.randomUUID();
-      const linkWithoutBlob: PdfDeepLink = { ...pdfLink, imageDataUrl: undefined };
+      const linkWithoutBlob: PdfDeepLink = {
+        ...pdfLink,
+        imageDataUrl: undefined,
+        imageWidth: undefined,
+        imageHeight: undefined,
+      };
 
       if (pdfLink.type === "image" && pdfLink.imageDataUrl) {
         const fileId = crypto.randomUUID() as unknown as FileId;
-        const aspectRatio = pdfLink.rect.width / (pdfLink.rect.height || 1);
+        const sourceWidth = pdfLink.imageWidth ?? 1;
+        const sourceHeight = pdfLink.imageHeight ?? 1;
+        const aspectRatio = sourceWidth / sourceHeight;
         const maxDimension = 300;
         const imageWidth = aspectRatio >= 1 ? maxDimension : maxDimension * aspectRatio;
         const imageHeight = aspectRatio >= 1 ? maxDimension / aspectRatio : maxDimension;

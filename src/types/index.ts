@@ -11,6 +11,8 @@ export interface PdfDeepLink {
   rect: NormalizedRect;
   text?: string;
   imageDataUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
   type: "text" | "area" | "image";
 }
 

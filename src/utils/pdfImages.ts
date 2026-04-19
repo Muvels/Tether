@@ -8,6 +8,12 @@ export interface PdfImageRect {
   rect: NormalizedRect;
 }
 
+export interface CapturedCanvasRegion {
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
 const MIN_IMAGE_FRACTION = 0.03;
 
 function multiply(m1: number[], m2: number[]): number[] {
@@ -72,14 +78,23 @@ export async function extractPageImages(
   return images;
 }
 
-export function captureCanvasRegion(
+export function captureCanvasRegionData(
   canvas: HTMLCanvasElement,
   rect: NormalizedRect,
-): string | null {
-  const sx = Math.round(rect.x * canvas.width);
-  const sy = Math.round(rect.y * canvas.height);
-  const sw = Math.round(rect.width * canvas.width);
-  const sh = Math.round(rect.height * canvas.height);
+): CapturedCanvasRegion | null {
+  const rawX = Math.round(rect.x * canvas.width);
+  const rawY = Math.round(rect.y * canvas.height);
+  const rawWidth = Math.round(rect.width * canvas.width);
+  const rawHeight = Math.round(rect.height * canvas.height);
+
+  if (rawWidth < 2 || rawHeight < 2) return null;
+
+  const sx = Math.max(0, Math.min(rawX, canvas.width));
+  const sy = Math.max(0, Math.min(rawY, canvas.height));
+  const maxWidth = canvas.width - sx;
+  const maxHeight = canvas.height - sy;
+  const sw = Math.max(0, Math.min(rawWidth, maxWidth));
+  const sh = Math.max(0, Math.min(rawHeight, maxHeight));
 
   if (sw < 2 || sh < 2) return null;
 
@@ -89,5 +104,16 @@ export function captureCanvasRegion(
   const ctx = tmp.getContext("2d");
   if (!ctx) return null;
   ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-  return tmp.toDataURL("image/png");
+  return {
+    dataUrl: tmp.toDataURL("image/png"),
+    width: sw,
+    height: sh,
+  };
+}
+
+export function captureCanvasRegion(
+  canvas: HTMLCanvasElement,
+  rect: NormalizedRect,
+): string | null {
+  return captureCanvasRegionData(canvas, rect)?.dataUrl ?? null;
 }

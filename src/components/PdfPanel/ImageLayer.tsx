@@ -1,7 +1,11 @@
 import { useEffect, useState, useCallback, type RefObject } from "react";
 import { v4 as uuid } from "uuid";
 import type { PdfDeepLink, PdfDocumentLike } from "../../types";
-import { extractPageImages, captureCanvasRegion, type PdfImageRect } from "../../utils/pdfImages";
+import {
+  extractPageImages,
+  captureCanvasRegionData,
+  type PdfImageRect,
+} from "../../utils/pdfImages";
 import { setDragData } from "../../utils/dragData";
 
 interface Props {
@@ -33,23 +37,26 @@ export default function ImageLayer({ pageNumber, containerRef, pdfDocument }: Pr
       const canvas = containerRef.current?.querySelector("canvas");
       if (!canvas) return;
 
-      const dataUrl = captureCanvasRegion(canvas, img.rect);
-      if (!dataUrl) return;
+      const capture = captureCanvasRegionData(canvas, img.rect);
+      if (!capture) return;
 
       const link: PdfDeepLink = {
         id: uuid(),
         page: pageNumber,
         rect: img.rect,
-        imageDataUrl: dataUrl,
+        imageDataUrl: capture.dataUrl,
+        imageWidth: capture.width,
+        imageHeight: capture.height,
         type: "image",
       };
 
       setDragData(e.dataTransfer, link);
 
       const preview = new Image();
-      preview.src = dataUrl;
-      const previewW = Math.min(img.rect.width * (canvas.width / window.devicePixelRatio), 200);
-      const previewH = previewW * (img.rect.height / img.rect.width);
+      preview.src = capture.dataUrl;
+      const previewScale = Math.min(200 / capture.width, 200 / capture.height, 1);
+      const previewW = capture.width * previewScale;
+      const previewH = capture.height * previewScale;
       e.dataTransfer.setDragImage(preview, previewW / 2, previewH / 2);
     },
     [containerRef, pageNumber],

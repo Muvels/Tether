@@ -46,14 +46,14 @@ Everything is stored locally on the machine. There is no cloud sync or shared ba
 - Navigate by page
 - Toggle PDF highlights on and off
 - Select text and drag it to the canvas
-- Hold `Alt` and drag to capture an arbitrary area
+- Hold `Alt` and drag to capture an arbitrary area as a screenshot
 - Detect page images and drag them to the canvas
 
 ### Canvas interaction
 
 - Use Excalidraw as the per-document canvas
 - Drop text selections to create linked quote cards
-- Drop area selections to create linked reference cards
+- Drop `Alt` area selections to create linked image elements
 - Drop detected PDF images to create linked image elements
 - Select a linked canvas element to reveal its source area in the PDF
 - Link an existing canvas element to the PDF manually

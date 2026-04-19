@@ -3,9 +3,11 @@ import { v4 as uuid } from "uuid";
 import type { PdfDeepLink, NormalizedRect } from "../../types";
 import { normalizeRect } from "../../utils/coordinates";
 import { setDragData } from "../../utils/dragData";
+import { captureCanvasRegionData } from "../../utils/pdfImages";
 
 const MIN_TEXT_LENGTH = 2;
 const SELECTION_SETTLE_MS = 150;
+const MIN_AREA_SELECTION = 0.01;
 
 interface Props {
   pageNumber: number;
@@ -22,6 +24,32 @@ export default function SelectionLayer({
   const [areaStart, setAreaStart] = useState<{ x: number; y: number } | null>(null);
   const [areaDraft, setAreaDraft] = useState<NormalizedRect | null>(null);
   const settleTimer = useRef<ReturnType<typeof setTimeout>>(null);
+  const currentSelectionRef = useRef<PdfDeepLink | null>(null);
+
+  useEffect(() => {
+    currentSelectionRef.current = currentSelection;
+  }, [currentSelection]);
+
+  const buildAreaScreenshotLink = useCallback(
+    (rect: NormalizedRect): PdfDeepLink | null => {
+      const canvas = containerRef.current?.querySelector("canvas");
+      if (!canvas) return null;
+
+      const capture = captureCanvasRegionData(canvas, rect);
+      if (!capture) return null;
+
+      return {
+        id: uuid(),
+        page: pageNumber,
+        rect,
+        imageDataUrl: capture.dataUrl,
+        imageWidth: capture.width,
+        imageHeight: capture.height,
+        type: "image",
+      };
+    },
+    [containerRef, pageNumber],
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -30,12 +58,19 @@ export default function SelectionLayer({
     const captureSelection = () => {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) {
-        setCurrentSelection(null);
+        if (currentSelectionRef.current?.type === "text") {
+          setCurrentSelection(null);
+        }
         return;
       }
 
       const text = sel.toString().trim();
-      if (!text || text.length < MIN_TEXT_LENGTH) return;
+      if (!text || text.length < MIN_TEXT_LENGTH) {
+        if (currentSelectionRef.current?.type === "text") {
+          setCurrentSelection(null);
+        }
+        return;
+      }
 
       const range = sel.getRangeAt(0);
       const rects = range.getClientRects();
@@ -126,15 +161,14 @@ export default function SelectionLayer({
 
     const onUp = () => {
       setAreaDraft((draft) => {
-        if (draft && draft.width >= 0.01 && draft.height >= 0.01) {
-          const link: PdfDeepLink = {
-            id: uuid(),
-            page: pageNumber,
-            rect: draft,
-            type: "area",
-          };
-          setCurrentSelection(link);
-          onSelection(link);
+        if (draft && draft.width >= MIN_AREA_SELECTION && draft.height >= MIN_AREA_SELECTION) {
+          const link = buildAreaScreenshotLink(draft);
+          if (link) {
+            setCurrentSelection(link);
+            onSelection(link);
+          } else {
+            setCurrentSelection(null);
+          }
         }
         return null;
       });
@@ -147,12 +181,23 @@ export default function SelectionLayer({
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     };
-  }, [areaStart, containerRef, pageNumber, onSelection]);
+  }, [areaStart, buildAreaScreenshotLink, containerRef, onSelection]);
 
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
       if (!currentSelection) return;
       setDragData(e.dataTransfer, currentSelection);
+
+      if (currentSelection.type === "image" && currentSelection.imageDataUrl) {
+        const preview = new Image();
+        preview.src = currentSelection.imageDataUrl;
+        const imageWidth = currentSelection.imageWidth ?? 180;
+        const imageHeight = currentSelection.imageHeight ?? 180;
+        const previewScale = Math.min(180 / imageWidth, 180 / imageHeight, 1);
+        const previewWidth = imageWidth * previewScale;
+        const previewHeight = imageHeight * previewScale;
+        e.dataTransfer.setDragImage(preview, previewWidth / 2, previewHeight / 2);
+      }
     },
     [currentSelection],
   );
@@ -205,7 +250,9 @@ export default function SelectionLayer({
             {currentSelection.text
               ? currentSelection.text.slice(0, 24) +
                 (currentSelection.text.length > 24 ? "…" : "")
-              : `Area p.${currentSelection.page}`}
+              : currentSelection.type === "image"
+                ? `Screenshot p.${currentSelection.page}`
+                : `Area p.${currentSelection.page}`}
           </span>
           <svg
             width="10"
