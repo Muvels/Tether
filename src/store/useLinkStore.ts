@@ -1,7 +1,20 @@
 import { create } from "zustand";
 import type { LinkEntry, PdfDeepLink, StoredScene } from "../types";
 
+interface WorkspaceSession {
+  pdfBytes: Uint8Array;
+  links: LinkEntry[];
+  scene: StoredScene | null;
+  savedLinks: LinkEntry[];
+  savedScene: StoredScene | null;
+  hasUnsavedChanges: boolean;
+  lastSavedAt: number | null;
+}
+
 interface LinkState {
+  workspaceSessions: Record<string, WorkspaceSession>;
+  dirtyFileIds: string[];
+  hasAnyUnsavedChanges: boolean;
   currentFileId: string | null;
   pdfBytes: Uint8Array | null;
   links: LinkEntry[];
@@ -29,13 +42,25 @@ interface LinkState {
   loadFile: (fileId: string | null) => Promise<void>;
   clearWorkspace: () => void;
   saveCurrentFile: () => Promise<void>;
+  saveAllDirtyFiles: () => Promise<void>;
+  forgetFileSession: (fileId: string) => void;
+  forgetSessionsForFiles: (fileIds: string[]) => void;
 }
+
+type DirtyState = Pick<LinkState, "dirtyFileIds" | "hasAnyUnsavedChanges" | "hasUnsavedChanges">;
 
 async function persistWorkspace(state: Pick<LinkState, "currentFileId" | "links" | "scene">) {
   if (!state.currentFileId) return;
   await Promise.all([
     window.desktopApi.saveLinks(state.currentFileId, state.links),
     window.desktopApi.saveScene(state.currentFileId, state.scene),
+  ]);
+}
+
+async function persistSession(fileId: string, session: Pick<WorkspaceSession, "links" | "scene">) {
+  await Promise.all([
+    window.desktopApi.saveLinks(fileId, session.links),
+    window.desktopApi.saveScene(fileId, session.scene),
   ]);
 }
 
@@ -59,7 +84,74 @@ function hasWorkspaceChanges(state: Pick<LinkState, "currentFileId" | "links" | 
   );
 }
 
+function buildDirtyState(
+  workspaceSessions: Record<string, WorkspaceSession>,
+  currentFileId: string | null,
+): DirtyState {
+  const dirtyFileIds = Object.entries(workspaceSessions)
+    .filter(([, session]) => session.hasUnsavedChanges)
+    .map(([fileId]) => fileId);
+
+  return {
+    dirtyFileIds,
+    hasAnyUnsavedChanges: dirtyFileIds.length > 0,
+    hasUnsavedChanges: currentFileId
+      ? Boolean(workspaceSessions[currentFileId]?.hasUnsavedChanges)
+      : false,
+  };
+}
+
+function createSessionPatch(
+  state: LinkState,
+  nextSession: WorkspaceSession,
+): Partial<LinkState> {
+  if (!state.currentFileId) {
+    return {};
+  }
+
+  const workspaceSessions = {
+    ...state.workspaceSessions,
+    [state.currentFileId]: nextSession,
+  };
+  const dirtyState = buildDirtyState(workspaceSessions, state.currentFileId);
+
+  return {
+    workspaceSessions,
+    pdfBytes: nextSession.pdfBytes,
+    links: nextSession.links,
+    scene: nextSession.scene,
+    savedLinks: nextSession.savedLinks,
+    savedScene: nextSession.savedScene,
+    lastSavedAt: nextSession.lastSavedAt,
+    ...dirtyState,
+  };
+}
+
+function clearActiveWorkspaceState(state: LinkState): Partial<LinkState> {
+  const dirtyState = buildDirtyState(state.workspaceSessions, null);
+
+  return {
+    currentFileId: null,
+    pdfBytes: null,
+    links: [],
+    scene: null,
+    savedLinks: [],
+    savedScene: null,
+    activeLink: null,
+    linkingElementId: null,
+    isLoading: false,
+    isSaving: false,
+    lastSavedAt: null,
+    ...dirtyState,
+  };
+}
+
+let loadRequestId = 0;
+
 export const useLinkStore = create<LinkState>((set, get) => ({
+  workspaceSessions: {},
+  dirtyFileIds: [],
+  hasAnyUnsavedChanges: false,
   currentFileId: null,
   pdfBytes: null,
   links: [],
@@ -75,41 +167,97 @@ export const useLinkStore = create<LinkState>((set, get) => ({
 
   addLink: (entry) =>
     set((state) => {
+      if (!state.currentFileId || !state.pdfBytes) return state;
+
       const links = [...state.links.filter((link) => link.elementId !== entry.elementId), entry];
-      return {
+      const hasUnsavedChanges = hasWorkspaceChanges({ ...state, links });
+
+      return createSessionPatch(state, {
+        pdfBytes: state.pdfBytes,
         links,
-        hasUnsavedChanges: hasWorkspaceChanges({ ...state, links }),
-      };
+        scene: state.scene,
+        savedLinks: state.savedLinks,
+        savedScene: state.savedScene,
+        hasUnsavedChanges,
+        lastSavedAt: state.lastSavedAt,
+      });
     }),
 
   removeLink: (elementId) =>
     set((state) => {
+      if (!state.currentFileId || !state.pdfBytes) return state;
+
       const links = state.links.filter((link) => link.elementId !== elementId);
       if (links.length === state.links.length) return state;
-      return {
+
+      const hasUnsavedChanges = hasWorkspaceChanges({ ...state, links });
+
+      return createSessionPatch(state, {
+        pdfBytes: state.pdfBytes,
         links,
-        hasUnsavedChanges: hasWorkspaceChanges({ ...state, links }),
-      };
+        scene: state.scene,
+        savedLinks: state.savedLinks,
+        savedScene: state.savedScene,
+        hasUnsavedChanges,
+        lastSavedAt: state.lastSavedAt,
+      });
     }),
 
-  setScene: (scene) => {
+  setScene: (scene) =>
     set((state) => {
+      if (!state.currentFileId || !state.pdfBytes) return state;
       if (scenesAreEqual(state.scene, scene)) return state;
-      return {
+
+      const hasUnsavedChanges = hasWorkspaceChanges({ ...state, scene });
+
+      return createSessionPatch(state, {
+        pdfBytes: state.pdfBytes,
+        links: state.links,
         scene,
-        hasUnsavedChanges: hasWorkspaceChanges({ ...state, scene }),
-      };
-    });
-  },
+        savedLinks: state.savedLinks,
+        savedScene: state.savedScene,
+        hasUnsavedChanges,
+        lastSavedAt: state.lastSavedAt,
+      });
+    }),
 
   syncSceneBaseline: (scene) =>
-    set((state) => ({
-      scene,
-      savedScene: scene,
-      hasUnsavedChanges: hasWorkspaceChanges({ ...state, scene, savedScene: scene }),
-    })),
+    set((state) => {
+      if (!state.currentFileId || !state.pdfBytes) return state;
 
-  markDirty: () => set((state) => ({ hasUnsavedChanges: hasWorkspaceChanges(state) })),
+      const hasUnsavedChanges = hasWorkspaceChanges({
+        ...state,
+        scene,
+        savedScene: scene,
+      });
+
+      return createSessionPatch(state, {
+        pdfBytes: state.pdfBytes,
+        links: state.links,
+        scene,
+        savedLinks: state.savedLinks,
+        savedScene: scene,
+        hasUnsavedChanges,
+        lastSavedAt: state.lastSavedAt,
+      });
+    }),
+
+  markDirty: () =>
+    set((state) => {
+      if (!state.currentFileId || !state.pdfBytes) return state;
+
+      const hasUnsavedChanges = hasWorkspaceChanges(state);
+
+      return createSessionPatch(state, {
+        pdfBytes: state.pdfBytes,
+        links: state.links,
+        scene: state.scene,
+        savedLinks: state.savedLinks,
+        savedScene: state.savedScene,
+        hasUnsavedChanges,
+        lastSavedAt: state.lastSavedAt,
+      });
+    }),
 
   setActiveLink: (link) => set({ activeLink: link }),
 
@@ -130,20 +278,37 @@ export const useLinkStore = create<LinkState>((set, get) => ({
     get().links.find((link) => link.elementId === elementId)?.pdfLink,
 
   loadFile: async (fileId) => {
+    const requestId = ++loadRequestId;
+
     if (!fileId) {
-      set({
-        currentFileId: null,
-        pdfBytes: null,
-        links: [],
-        scene: null,
-        savedLinks: [],
-        savedScene: null,
-        activeLink: null,
-        linkingElementId: null,
-        isLoading: false,
-        isSaving: false,
-        hasUnsavedChanges: false,
-        lastSavedAt: null,
+      set((state) => clearActiveWorkspaceState(state));
+      return;
+    }
+
+    const cachedSession = get().workspaceSessions[fileId];
+    if (cachedSession) {
+      set((state) => {
+        const workspaceSessions = {
+          ...state.workspaceSessions,
+          [fileId]: cachedSession,
+        };
+        const dirtyState = buildDirtyState(workspaceSessions, fileId);
+
+        return {
+          workspaceSessions,
+          currentFileId: fileId,
+          pdfBytes: cachedSession.pdfBytes,
+          links: cachedSession.links,
+          scene: cachedSession.scene,
+          savedLinks: cachedSession.savedLinks,
+          savedScene: cachedSession.savedScene,
+          activeLink: null,
+          linkingElementId: null,
+          isLoading: false,
+          isSaving: false,
+          lastSavedAt: cachedSession.lastSavedAt,
+          ...dirtyState,
+        };
       });
       return;
     }
@@ -152,69 +317,198 @@ export const useLinkStore = create<LinkState>((set, get) => ({
 
     try {
       const workspace = await window.desktopApi.openWorkspace(fileId);
-      set({
-        currentFileId: fileId,
+      if (requestId !== loadRequestId) {
+        return;
+      }
+
+      const session: WorkspaceSession = {
         pdfBytes: new Uint8Array(workspace.pdfBytes),
         links: workspace.links,
         scene: workspace.scene,
         savedLinks: workspace.links,
         savedScene: workspace.scene,
-        activeLink: null,
-        linkingElementId: null,
-        isLoading: false,
-        isSaving: false,
         hasUnsavedChanges: false,
         lastSavedAt: null,
+      };
+
+      set((state) => {
+        const workspaceSessions = {
+          ...state.workspaceSessions,
+          [fileId]: session,
+        };
+        const dirtyState = buildDirtyState(workspaceSessions, fileId);
+
+        return {
+          workspaceSessions,
+          currentFileId: fileId,
+          pdfBytes: session.pdfBytes,
+          links: session.links,
+          scene: session.scene,
+          savedLinks: session.savedLinks,
+          savedScene: session.savedScene,
+          activeLink: null,
+          linkingElementId: null,
+          isLoading: false,
+          isSaving: false,
+          lastSavedAt: null,
+          ...dirtyState,
+        };
       });
     } catch (error) {
-      set({ isLoading: false });
+      if (requestId === loadRequestId) {
+        set({ isLoading: false });
+      }
       throw error;
     }
   },
 
-  clearWorkspace: () => {
-    set({
-      currentFileId: null,
-      pdfBytes: null,
-      links: [],
-      scene: null,
-      savedLinks: [],
-      savedScene: null,
-      activeLink: null,
-      linkingElementId: null,
-      isLoading: false,
-      isSaving: false,
-      hasUnsavedChanges: false,
-      lastSavedAt: null,
-    });
-  },
+  clearWorkspace: () =>
+    set((state) => ({
+      workspaceSessions: {},
+      ...clearActiveWorkspaceState(state),
+    })),
 
   saveCurrentFile: async () => {
     const { currentFileId, links, scene } = get();
     if (!currentFileId) return;
 
     set({ isSaving: true });
+
     try {
       await persistWorkspace({ currentFileId, links, scene });
-      const latest = get();
-      if (
-        latest.currentFileId === currentFileId &&
-        linksAreEqual(latest.links, links) &&
-        scenesAreEqual(latest.scene, scene)
-      ) {
-        set({
+
+      set((state) => {
+        if (state.currentFileId !== currentFileId || !state.pdfBytes) {
+          return { isSaving: false };
+        }
+
+        if (
+          !linksAreEqual(state.links, links) ||
+          !scenesAreEqual(state.scene, scene)
+        ) {
+          return { isSaving: false };
+        }
+
+        return createSessionPatch(state, {
+          pdfBytes: state.pdfBytes,
+          links,
+          scene,
           savedLinks: links,
           savedScene: scene,
           hasUnsavedChanges: false,
-          isSaving: false,
           lastSavedAt: Date.now(),
         });
-        return;
-      }
+      });
+
       set({ isSaving: false });
     } catch (error) {
       set({ isSaving: false });
       throw error;
     }
   },
+
+  saveAllDirtyFiles: async () => {
+    const dirtySessions = Object.entries(get().workspaceSessions).filter(
+      ([, session]) => session.hasUnsavedChanges,
+    );
+
+    if (dirtySessions.length === 0) return;
+
+    await Promise.all(
+      dirtySessions.map(([fileId, session]) =>
+        persistSession(fileId, { links: session.links, scene: session.scene }),
+      ),
+    );
+
+    const savedAt = Date.now();
+
+    set((state) => {
+      const workspaceSessions = { ...state.workspaceSessions };
+
+      for (const [fileId] of dirtySessions) {
+        const session = workspaceSessions[fileId];
+        if (!session) continue;
+
+        workspaceSessions[fileId] = {
+          ...session,
+          savedLinks: session.links,
+          savedScene: session.scene,
+          hasUnsavedChanges: false,
+          lastSavedAt: savedAt,
+        };
+      }
+
+      const activeSession = state.currentFileId
+        ? workspaceSessions[state.currentFileId]
+        : null;
+      const dirtyState = buildDirtyState(workspaceSessions, state.currentFileId);
+
+      return {
+        workspaceSessions,
+        savedLinks: activeSession?.savedLinks ?? state.savedLinks,
+        savedScene: activeSession?.savedScene ?? state.savedScene,
+        lastSavedAt: activeSession?.lastSavedAt ?? state.lastSavedAt,
+        ...dirtyState,
+      };
+    });
+  },
+
+  forgetFileSession: (fileId) =>
+    set((state) => {
+      if (!(fileId in state.workspaceSessions)) return state;
+
+      const { [fileId]: removedSession, ...workspaceSessions } = state.workspaceSessions;
+      void removedSession;
+
+      if (state.currentFileId === fileId) {
+        return {
+          workspaceSessions,
+          ...clearActiveWorkspaceState({
+            ...state,
+            workspaceSessions,
+          }),
+        };
+      }
+
+      const dirtyState = buildDirtyState(workspaceSessions, state.currentFileId);
+      return {
+        workspaceSessions,
+        ...dirtyState,
+      };
+    }),
+
+  forgetSessionsForFiles: (fileIds) =>
+    set((state) => {
+      if (fileIds.length === 0) return state;
+
+      let workspaceSessions = state.workspaceSessions;
+      let didChange = false;
+
+      for (const fileId of fileIds) {
+        if (!(fileId in workspaceSessions)) continue;
+        if (!didChange) {
+          workspaceSessions = { ...workspaceSessions };
+          didChange = true;
+        }
+        delete workspaceSessions[fileId];
+      }
+
+      if (!didChange) return state;
+
+      if (state.currentFileId && !workspaceSessions[state.currentFileId]) {
+        return {
+          workspaceSessions,
+          ...clearActiveWorkspaceState({
+            ...state,
+            workspaceSessions,
+          }),
+        };
+      }
+
+      const dirtyState = buildDirtyState(workspaceSessions, state.currentFileId);
+      return {
+        workspaceSessions,
+        ...dirtyState,
+      };
+    }),
 }));

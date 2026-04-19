@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +29,7 @@ function formatDate(ts: number) {
 }
 
 function ProjectContent({ project }: { project: Project }) {
+  const dirtyFileIds = useLinkStore((s) => s.dirtyFileIds);
   const deleteProject = useProjectStore((s) => s.deleteProject);
   const renameProject = useProjectStore((s) => s.renameProject);
   const addFile = useProjectStore((s) => s.addFile);
@@ -38,20 +39,42 @@ function ProjectContent({ project }: { project: Project }) {
   const closeFile = useProjectStore((s) => s.closeFile);
   const activeFileId = useProjectStore((s) => s.activeFileId);
   const loadFile = useLinkStore((s) => s.loadFile);
+  const forgetFileSession = useLinkStore((s) => s.forgetFileSession);
+  const forgetSessionsForFiles = useLinkStore((s) => s.forgetSessionsForFiles);
   const { guardNavigation, isNavigationBlocked } = useWorkspaceNavigationGuard();
 
-  const [title, setTitle] = useState(project.name);
   const [editingFileId, setEditingFileId] = useState<string | null>(null);
   const [editingFileName, setEditingFileName] = useState("");
   const [openingFileId, setOpeningFileId] = useState<string | null>(null);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const titleDraftRef = useRef(project.name);
+  const isEditingTitleRef = useRef(false);
+
+  useEffect(() => {
+    titleDraftRef.current = project.name;
+
+    const titleElement = titleRef.current;
+    if (!isEditingTitleRef.current && titleElement && titleElement.textContent !== project.name) {
+      titleElement.textContent = project.name;
+    }
+  }, [project.name]);
 
   const handleTitleBlur = useCallback(() => {
-    const newName = title.trim() || "Untitled";
-    void renameProject(project.id, newName);
-    if (!title.trim()) setTitle("Untitled");
-  }, [project.id, renameProject, title]);
+    isEditingTitleRef.current = false;
+
+    const currentTitle = titleRef.current?.textContent ?? titleDraftRef.current;
+    const newName = currentTitle.trim() || "Untitled";
+    titleDraftRef.current = newName;
+
+    if (titleRef.current && titleRef.current.textContent !== newName) {
+      titleRef.current.textContent = newName;
+    }
+
+    if (newName !== project.name) {
+      void renameProject(project.id, newName);
+    }
+  }, [project.id, project.name, renameProject]);
 
   const handleTitleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -77,17 +100,16 @@ function ProjectContent({ project }: { project: Project }) {
   const handleOpenFile = useCallback(
     (fileId: string) => {
       if (fileId === activeFileId || openingFileId) return;
-      guardNavigation(async () => {
-        setOpeningFileId(fileId);
-        try {
-          await loadFile(fileId);
+      setOpeningFileId(fileId);
+      void loadFile(fileId)
+        .then(() => {
           openFile(fileId);
-        } finally {
+        })
+        .finally(() => {
           setOpeningFileId(null);
-        }
-      });
+        });
     },
-    [activeFileId, guardNavigation, loadFile, openFile, openingFileId],
+    [activeFileId, loadFile, openFile, openingFileId],
   );
 
   const handleRemoveFile = useCallback(
@@ -97,12 +119,22 @@ function ProjectContent({ project }: { project: Project }) {
           closeFile();
           await loadFile(null);
           await removeFile(project.id, fileId);
+          forgetFileSession(fileId);
         });
         return;
       }
       await removeFile(project.id, fileId);
+      forgetFileSession(fileId);
     },
-    [activeFileId, closeFile, guardNavigation, loadFile, project.id, removeFile],
+    [
+      activeFileId,
+      closeFile,
+      forgetFileSession,
+      guardNavigation,
+      loadFile,
+      project.id,
+      removeFile,
+    ],
   );
 
   const startRenameFile = useCallback((fileId: string, currentName: string) => {
@@ -144,6 +176,7 @@ function ProjectContent({ project }: { project: Project }) {
         closeFile();
         await loadFile(null);
         await deleteProject(project.id);
+        forgetSessionsForFiles(project.files.map((file) => file.id));
       } finally {
         setIsDeletingProject(false);
       }
@@ -151,9 +184,11 @@ function ProjectContent({ project }: { project: Project }) {
   }, [
     closeFile,
     deleteProject,
+    forgetSessionsForFiles,
     guardNavigation,
     isDeletingProject,
     loadFile,
+    project.files,
     project.id,
     project.name,
   ]);
@@ -173,12 +208,15 @@ function ProjectContent({ project }: { project: Project }) {
               suppressContentEditableWarning
               className="text-4xl font-bold text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/40"
               data-placeholder="Untitled"
-              onInput={(e) => setTitle(e.currentTarget.textContent ?? "")}
+              onFocus={() => {
+                isEditingTitleRef.current = true;
+              }}
+              onInput={(e) => {
+                titleDraftRef.current = e.currentTarget.textContent ?? "";
+              }}
               onBlur={handleTitleBlur}
               onKeyDown={handleTitleKeyDown}
-            >
-              {title}
-            </h1>
+            />
             <p className="mt-2 text-xs text-muted-foreground">
               Created {formatDate(project.createdAt)}
             </p>
@@ -243,7 +281,15 @@ function ProjectContent({ project }: { project: Project }) {
                     disabled={isProjectActionDisabled}
                     className="flex min-w-0 flex-1 items-center gap-3 text-left"
                   >
-                    <FileTextIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="flex items-center gap-2">
+                      <FileTextIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      {dirtyFileIds.includes(file.id) ? (
+                        <span
+                          aria-hidden
+                          className="size-1.5 shrink-0 rounded-full bg-yellow-400"
+                        />
+                      ) : null}
+                    </div>
                     <span className="flex-1 truncate text-sm text-foreground">
                       {file.name}
                     </span>

@@ -17,12 +17,13 @@ export function DocumentTabs() {
   const openTabs = useProjectStore((s) => s.openTabs);
   const activeFileId = useProjectStore((s) => s.activeFileId);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const dirtyFileIds = useLinkStore((s) => s.dirtyFileIds);
   const openFile = useProjectStore((s) => s.openFile);
   const closeTab = useProjectStore((s) => s.closeTab);
   const reorderTabs = useProjectStore((s) => s.reorderTabs);
   const switchProject = useProjectStore((s) => s.switchProject);
   const loadFile = useLinkStore((s) => s.loadFile);
-  const { guardNavigation, isNavigationBlocked } = useWorkspaceNavigationGuard();
+  const { isNavigationBlocked } = useWorkspaceNavigationGuard();
 
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -49,18 +50,15 @@ export function DocumentTabs() {
       if (isNavigationBlocked) return;
       if (tab.fileId === activeFileId) return;
 
-      guardNavigation(async () => {
-        if (tab.projectId !== activeProjectId) {
-          switchProject(tab.projectId);
-        }
-        openFile(tab.fileId);
-        await loadFile(tab.fileId);
-      });
+      if (tab.projectId !== activeProjectId) {
+        switchProject(tab.projectId);
+      }
+      openFile(tab.fileId);
+      void loadFile(tab.fileId);
     },
     [
       activeFileId,
       activeProjectId,
-      guardNavigation,
       isNavigationBlocked,
       loadFile,
       openFile,
@@ -80,12 +78,10 @@ export function DocumentTabs() {
         return;
       }
 
-      guardNavigation(async () => {
-        const { nextFileId } = closeTab(tab.fileId);
-        await loadFile(nextFileId);
-      });
+      const { nextFileId } = closeTab(tab.fileId);
+      void loadFile(nextFileId);
     },
-    [activeFileId, closeTab, guardNavigation, isNavigationBlocked, loadFile],
+    [activeFileId, closeTab, isNavigationBlocked, loadFile],
   );
 
   const handleDragStart = useCallback(
@@ -140,6 +136,7 @@ export function DocumentTabs() {
           dragOverIndex === index && draggingIndex !== null && draggingIndex !== index;
         const showDivider =
           index > 0 && activeIndex !== index && activeIndex !== index - 1;
+        const isDirty = dirtyFileIds.includes(tab.fileId);
 
         return (
           <div key={tab.fileId} className="flex shrink-0 items-center">
@@ -183,7 +180,13 @@ export function DocumentTabs() {
                 isNavigationBlocked && !isActive && "pointer-events-none opacity-60",
               )}
             >
-            <span className="min-w-0 flex-1 truncate">
+            <span className="min-w-0 flex flex-1 items-center truncate">
+              {isDirty && (
+                <span
+                  aria-hidden
+                  className="mr-1.5 size-1.5 shrink-0 rounded-full bg-yellow-400"
+                />
+              )}
               <span
                 className={cn(
                   "transition-colors",

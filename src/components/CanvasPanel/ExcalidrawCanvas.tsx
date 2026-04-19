@@ -46,6 +46,10 @@ export default function ExcalidrawCanvas() {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const currentFileId = useLinkStore((state) => state.currentFileId);
+  const hasUnsavedChanges = useLinkStore((state) => state.hasUnsavedChanges);
+  const isSaving = useLinkStore((state) => state.isSaving);
+  const saveCurrentFile = useLinkStore((state) => state.saveCurrentFile);
   const addLink = useLinkStore((state) => state.addLink);
   const removeLink = useLinkStore((state) => state.removeLink);
   const setActiveLink = useLinkStore((state) => state.setActiveLink);
@@ -55,7 +59,6 @@ export default function ExcalidrawCanvas() {
   const cancelLinking = useLinkStore((state) => state.cancelLinking);
   const setScene = useLinkStore((state) => state.setScene);
   const syncSceneBaseline = useLinkStore((state) => state.syncSceneBaseline);
-  const currentFileId = useLinkStore((state) => state.currentFileId);
   const scene = useLinkStore((state) => state.scene);
   const activeFileId = useProjectStore((state) => state.activeFileId);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
@@ -490,10 +493,29 @@ export default function ExcalidrawCanvas() {
     });
   }, [api, setActiveLink]);
 
+  const handleKeyDownCapture = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key.toLowerCase() !== "s" || (!event.metaKey && !event.ctrlKey)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!currentFileId || !hasUnsavedChanges || isSaving) return;
+
+      void saveCurrentFile().catch((error) => {
+        console.error("Failed to save workspace from canvas shortcut", error);
+      });
+    },
+    [currentFileId, hasUnsavedChanges, isSaving, saveCurrentFile],
+  );
+
   return (
     <div
       ref={wrapperRef}
       className="excalidraw-shell relative h-full"
+      onKeyDownCapture={handleKeyDownCapture}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -507,6 +529,7 @@ export default function ExcalidrawCanvas() {
           canvasActions: {
             loadScene: false,
             export: false,
+            saveToActiveFile: false,
           },
         }}
       >

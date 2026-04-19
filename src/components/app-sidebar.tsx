@@ -5,7 +5,8 @@ import * as React from "react"
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavProjects } from "@/components/nav-projects"
-import { TeamSwitcher } from "@/components/team-switcher"
+import { TeamSwitcher, type Team } from "@/components/team-switcher"
+import type { NewTeam } from "@/components/add-team-dialog"
 import {
   Sidebar,
   SidebarContent,
@@ -24,24 +25,28 @@ import {
   FolderOpenIcon,
 } from "lucide-react"
 
+const initialTeams: Team[] = [
+  {
+    name: "Acme Inc",
+    logo: <TerminalIcon />,
+    plan: "Enterprise",
+    color: "#3b82f6",
+  },
+  {
+    name: "Acme Corp.",
+    logo: <AudioLinesIcon />,
+    plan: "Startup",
+    color: "#8b5cf6",
+  },
+  {
+    name: "Evil Corp.",
+    logo: <TerminalIcon />,
+    plan: "Free",
+    color: "#ef4444",
+  },
+]
+
 const data = {
-  teams: [
-    {
-      name: "Acme Inc",
-      logo: <TerminalIcon />,
-      plan: "Enterprise",
-    },
-    {
-      name: "Acme Corp.",
-      logo: <AudioLinesIcon />,
-      plan: "Startup",
-    },
-    {
-      name: "Evil Corp.",
-      logo: <TerminalIcon />,
-      plan: "Free",
-    },
-  ],
   navMain: [
     {
       title: "Search",
@@ -73,16 +78,37 @@ function SidebarTitlebar() {
 
   return (
     <div
-      className="app-drag-region flex h-12 shrink-0 items-center gap-1 pr-2"
+      className="app-drag-region flex h-12 shrink-0 items-center justify-end gap-1 pr-2"
       style={{ paddingLeft: open ? 78 : 8 }}
     >
-      <SidebarTrigger className="h-6 w-9 shrink-0" />
-      
+      <SidebarTrigger className="h-6 w-9 shrink-0 text-sidebar-foreground/60" />
     </div>
   )
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const [teams, setTeams] = React.useState<Team[]>(initialTeams)
+
+  const handleAddTeam = React.useCallback((team: NewTeam) => {
+    setTeams((prev) => {
+      let candidate = team.name
+      let suffix = 2
+      const existing = new Set(prev.map((t) => t.name))
+      while (existing.has(candidate)) {
+        candidate = `${team.name} (${suffix++})`
+      }
+      return [
+        ...prev,
+        {
+          name: candidate,
+          logo: team.logo,
+          plan: "Free",
+          color: team.color,
+        },
+      ]
+    })
+  }, [])
+
   const openSavedFilesDirectory = React.useCallback(async () => {
     try {
       await window.desktopApi.openSavedFilesDirectory()
@@ -118,7 +144,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarFooter className="gap-0 p-0">
           <NavSecondary items={navSecondary} className="px-2 py-1" />
           <div className="px-2 pb-2">
-            <TeamSwitcher teams={data.teams} />
+            <TeamSwitcher teams={teams} onAddTeam={handleAddTeam} />
           </div>
         </SidebarFooter>
       </div>

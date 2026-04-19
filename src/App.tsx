@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import Layout from "./components/Layout";
 import PdfViewer from "./components/PdfPanel/PdfViewer";
 import ExcalidrawCanvas from "./components/CanvasPanel/ExcalidrawCanvas";
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontalIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { DocumentTabs } from "@/components/DocumentTabs";
+import { CommandPalette } from "@/components/CommandPalette";
 
 function MainContent() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -106,6 +108,8 @@ function MainInsetTopBar() {
   const deleteProject = useProjectStore((s) => s.deleteProject);
   const closeFile = useProjectStore((s) => s.closeFile);
   const loadFile = useLinkStore((s) => s.loadFile);
+  const forgetFileSession = useLinkStore((s) => s.forgetFileSession);
+  const forgetSessionsForFiles = useLinkStore((s) => s.forgetSessionsForFiles);
   const { guardNavigation, isNavigationBlocked } = useWorkspaceNavigationGuard();
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
@@ -139,8 +143,17 @@ function MainInsetTopBar() {
       closeFile();
       await loadFile(null);
       await removeFile(title.projectId, title.fileId!);
+      forgetFileSession(title.fileId!);
     });
-  }, [closeFile, guardNavigation, isNavigationBlocked, loadFile, removeFile, title]);
+  }, [
+    closeFile,
+    forgetFileSession,
+    guardNavigation,
+    isNavigationBlocked,
+    loadFile,
+    removeFile,
+    title,
+  ]);
 
   const handleDeleteProject = useCallback(() => {
     if (!title || isNavigationBlocked) return;
@@ -151,11 +164,24 @@ function MainInsetTopBar() {
     if (!confirmed) return;
 
     guardNavigation(async () => {
+      const project = useProjectStore
+        .getState()
+        .projects.find((candidate) => candidate.id === title.projectId);
+
       closeFile();
       await loadFile(null);
       await deleteProject(title.projectId);
+      forgetSessionsForFiles(project?.files.map((file) => file.id) ?? []);
     });
-  }, [closeFile, deleteProject, guardNavigation, isNavigationBlocked, loadFile, title]);
+  }, [
+    closeFile,
+    deleteProject,
+    forgetSessionsForFiles,
+    guardNavigation,
+    isNavigationBlocked,
+    loadFile,
+    title,
+  ]);
 
   const handleUploadClick = useCallback(() => {
     if (!onProjectPage || isNavigationBlocked || !title) return;
@@ -184,7 +210,7 @@ function MainInsetTopBar() {
       className="app-drag-region pointer-events-auto absolute inset-x-0 top-0 z-20 flex h-[var(--app-topbar-height)] shrink-0 items-center gap-2 bg-muted/60 pr-2 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-muted/50"
       style={{ paddingLeft: collapsed ? 78 : 12 }}
     >
-      {collapsed && <SidebarTrigger className="h-6 w-9 shrink-0" />}
+      {collapsed && <SidebarTrigger className="h-6 w-9 shrink-0 text-sidebar-foreground/60" />}
 
       {hasTabs ? (
         <DocumentTabs />
@@ -306,19 +332,120 @@ function WorkspaceSaveGuards() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [currentFileId, hasUnsavedChanges, isSaving, saveCurrentFile]);
 
-  useEffect(() => {
-    if (!hasUnsavedChanges) return;
-
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [hasUnsavedChanges]);
-
   return null;
+}
+
+function WorkspaceCloseGuard() {
+  const hasAnyUnsavedChanges = useLinkStore((s) => s.hasAnyUnsavedChanges);
+  const dirtyFileIds = useLinkStore((s) => s.dirtyFileIds);
+  const saveAllDirtyFiles = useLinkStore((s) => s.saveAllDirtyFiles);
+  const [open, setOpen] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    return window.desktopApi.onRequestAppClose(() => {
+      if (isResolving) return;
+
+      if (!useLinkStore.getState().hasAnyUnsavedChanges) {
+        void window.desktopApi.confirmAppClose();
+        return;
+      }
+
+      setErrorMessage(null);
+      setOpen(true);
+    });
+  }, [isResolving]);
+
+  const handleSaveAndClose = useCallback(async () => {
+    setIsResolving(true);
+    setErrorMessage(null);
+
+    try {
+      await saveAllDirtyFiles();
+      await window.desktopApi.confirmAppClose();
+    } catch (error) {
+      console.error("Failed to save workspaces before closing", error);
+      setErrorMessage("Could not save all changes. Try again or discard them.");
+      setIsResolving(false);
+    }
+  }, [saveAllDirtyFiles]);
+
+  const handleDiscardAndClose = useCallback(async () => {
+    setIsResolving(true);
+    setErrorMessage(null);
+
+    try {
+      await window.desktopApi.confirmAppClose();
+    } catch (error) {
+      console.error("Failed to close application", error);
+      setErrorMessage("Could not close the app. Try again.");
+      setIsResolving(false);
+    }
+  }, []);
+
+  const dirtyCount = dirtyFileIds.length;
+
+  return (
+    <DialogPrimitive.Root
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (isResolving) return;
+        setErrorMessage(null);
+        setOpen(nextOpen);
+      }}
+    >
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/20 backdrop-blur-xs" />
+        <DialogPrimitive.Popup className="fixed left-1/2 top-1/2 z-50 flex w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-lg border border-border bg-popover p-5 text-popover-foreground shadow-lg">
+          <div className="space-y-1">
+            <DialogPrimitive.Title className="text-base font-medium text-foreground">
+              Unsaved changes
+            </DialogPrimitive.Title>
+            <DialogPrimitive.Description className="text-sm text-muted-foreground">
+              {dirtyCount === 1
+                ? "One document still has unsaved changes. Save it before closing, or discard it."
+                : `${dirtyCount} documents still have unsaved changes. Save them before closing, or discard them.`}
+            </DialogPrimitive.Description>
+          </div>
+          {errorMessage && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {errorMessage}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                if (isResolving) return;
+                setErrorMessage(null);
+                setOpen(false);
+              }}
+              disabled={isResolving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleDiscardAndClose()}
+              disabled={isResolving}
+            >
+              Discard and Close
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSaveAndClose()}
+              disabled={isResolving || !hasAnyUnsavedChanges}
+            >
+              {isResolving ? "Saving..." : "Save and Close"}
+            </Button>
+          </div>
+        </DialogPrimitive.Popup>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  );
 }
 
 export default function App() {
@@ -333,6 +460,8 @@ export default function App() {
       <SidebarProvider className="h-svh !min-h-0 overflow-hidden">
         <WorkspaceNavigationGuardProvider>
           <WorkspaceSaveGuards />
+          <WorkspaceCloseGuard />
+          <CommandPalette />
           <AppSidebar className="border-r-[#dcdcdc]" />
           <MainInset />
         </WorkspaceNavigationGuardProvider>

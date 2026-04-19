@@ -23,6 +23,12 @@ const desktopApi: DesktopApi = {
   renamePdf: (input: RenamePdfInput) => ipcRenderer.invoke("pdfs:rename", input),
   deletePdf: (input: DeletePdfInput) => ipcRenderer.invoke("pdfs:delete", input),
   openSavedFilesDirectory: () => ipcRenderer.invoke("app:open-saved-files-directory") as Promise<string>,
+  onRequestAppClose: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("app:request-close", listener);
+    return () => ipcRenderer.removeListener("app:request-close", listener);
+  },
+  confirmAppClose: () => ipcRenderer.invoke("app:confirm-close"),
   openWorkspace: async (fileId: string) => {
     const workspace = (await ipcRenderer.invoke("workspace:open", fileId)) as WorkspaceData;
     return {

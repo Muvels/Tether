@@ -22,12 +22,13 @@
     "dist": "pnpm run build && electron-builder"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.3.14",
     "@base-ui/react": "^1.4.0",
+    "@electric-sql/pglite": "^0.3.14",
     "@excalidraw/excalidraw": "^0.18.0",
     "@fontsource-variable/geist": "^5.2.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "lucide-react": "^1.8.0",
     "pdfjs-dist": "5.4.296",
     "react": "^19.2.4",

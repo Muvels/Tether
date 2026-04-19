@@ -18,6 +18,7 @@ import {
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const IS_DEV = Boolean(DEV_SERVER_URL);
+const approvedCloseWindows = new WeakSet<BrowserWindow>();
 
 function registerIpcHandlers() {
   ipcMain.handle("app:bootstrap", () => bootstrap());
@@ -46,6 +47,13 @@ function registerIpcHandlers() {
   ipcMain.handle("workspace:open", (_event, fileId: string) => openWorkspace(fileId));
   ipcMain.handle("workspace:save-links", (_event, fileId: string, links) => saveLinks(fileId, links));
   ipcMain.handle("workspace:save-scene", (_event, fileId: string, scene) => saveScene(fileId, scene));
+  ipcMain.handle("app:confirm-close", (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) return;
+
+    approvedCloseWindows.add(window);
+    window.close();
+  });
 }
 
 async function createMainWindow() {
@@ -75,10 +83,19 @@ async function createMainWindow() {
   if (IS_DEV && DEV_SERVER_URL) {
     await window.loadURL(DEV_SERVER_URL);
     window.webContents.openDevTools({ mode: "detach" });
-    return;
+  } else {
+    await window.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
   }
 
-  await window.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
+  window.on("close", (event) => {
+    if (approvedCloseWindows.has(window)) {
+      approvedCloseWindows.delete(window);
+      return;
+    }
+
+    event.preventDefault();
+    window.webContents.send("app:request-close");
+  });
 }
 
 app.whenReady().then(async () => {

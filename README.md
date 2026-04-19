@@ -1,20 +1,94 @@
 # PDF Canvas Linker
 
-`pdf-canvas-linker` is now an Electron-first desktop app for working with PDFs as source material and an Excalidraw canvas as the thinking surface.
+PDF Canvas Linker is a local-first Electron desktop app for turning PDFs into source-linked visual workspaces.
 
-The app combines a PDF viewer with a linked canvas so you can pull text, image regions, and arbitrary areas out of a document, turn them into visual notes, and jump back to the exact source location later.
+It pairs a PDF reader with an Excalidraw canvas so you can pull text, image regions, and arbitrary page areas out of a document, arrange them visually, and jump back to the exact source location later.
 
-## Current Architecture
+## What The App Is Now
 
-- Electron `main` process acts as the local backend
-- Electron `preload` exposes a typed IPC bridge at `window.desktopApi`
-- React + Vite power the renderer UI
-- PGlite stores projects, file metadata, links, and Excalidraw scenes
-- Uploaded PDFs are stored as real files in the Electron app data directory
+This project is no longer the earlier browser-only experiment. The current version is an Electron app with:
 
-### Local Data Layout
+- a real local persistence layer
+- filesystem-backed PDF storage
+- a project-based workspace model
+- multi-document tabs
+- per-document Excalidraw scenes
+- source links between canvas elements and PDF locations
 
-The app stores data under:
+Everything is stored locally on the machine. There is no cloud sync or shared backend in the current implementation.
+
+## Core Workflow
+
+1. Create a project.
+2. Import one or more PDFs into that project.
+3. Open a document workspace.
+4. Read the PDF on the left and build notes on the canvas on the right.
+5. Drag content from the PDF onto the canvas to create linked elements.
+6. Reopen the document later with its links and Excalidraw scene intact.
+
+## Current Capabilities
+
+### Projects and documents
+
+- Create, rename, and delete projects
+- Import multiple PDFs per project
+- Rename and delete PDFs
+- Open documents from the sidebar or the project page
+- Work with multiple open document tabs
+- Reorder tabs with drag and drop
+- Open the saved PDF directory from the sidebar
+
+### PDF interaction
+
+- Render PDFs inside the app with `react-pdf` / pdf.js
+- Fit the document to the visible area on load
+- Zoom in and out
+- Navigate by page
+- Toggle PDF highlights on and off
+- Select text and drag it to the canvas
+- Hold `Alt` and drag to capture an arbitrary area
+- Detect page images and drag them to the canvas
+
+### Canvas interaction
+
+- Use Excalidraw as the per-document canvas
+- Drop text selections to create linked quote cards
+- Drop area selections to create linked reference cards
+- Drop detected PDF images to create linked image elements
+- Select a linked canvas element to reveal its source area in the PDF
+- Link an existing canvas element to the PDF manually
+- Remove links automatically when their source canvas element is deleted
+
+### Saving and navigation
+
+- Each PDF has its own stored canvas scene and link set
+- `Cmd+S` / `Ctrl+S` saves the current workspace
+- If you switch documents with unsaved changes, the app prompts you to save, discard, or cancel
+- The app warns before window unload when there are unsaved workspace changes
+
+## How Linking Works
+
+The linking model is intentionally simple:
+
+- every link belongs to a single PDF file
+- every link connects one canvas element to one normalized PDF location
+- links can represent text, arbitrary areas, or images
+- clicking or selecting a linked canvas element focuses the related PDF region
+
+Normalized coordinates are stored per page, which makes links resilient to zoom level changes.
+
+## Architecture
+
+- Electron `main` process handles window lifecycle, IPC, local files, and database access
+- Electron `preload` exposes a typed bridge at `window.desktopApi`
+- React + Vite power the renderer
+- Zustand stores manage project state and active workspace state
+- PGlite stores projects, file metadata, links, and Excalidraw scene data
+- PDF binaries are stored as real files on disk
+
+## Local Data Layout
+
+App data lives under the Electron `userData` directory:
 
 ```text
 <userData>/app-data/
@@ -22,54 +96,35 @@ The app stores data under:
 └── pdfs/        # Stored PDFs as <fileId>.pdf
 ```
 
-On macOS, `<userData>` is the standard Electron app data directory for the current user.
-
-## Features
-
-### Projects and Files
-
-- Create multiple projects from the sidebar
-- Rename projects inline
-- Add multiple PDFs to a project
-- Switch between files inside a project
-- Return from an open file back to the project page
-
-### PDF Interaction
-
-- Open stored PDFs inside a project
-- Select text in the PDF
-- `Alt` + drag to capture an arbitrary area
-- Detect and drag images from the PDF page
-- Zoom pages in and out
-- Navigate by page
-- Show or hide link highlights
-
-### Canvas Interaction
-
-- Drop text selections to create linked quote cards
-- Drop area selections to create linked reference cards
-- Drop images to create linked image elements
-- Select an existing canvas element and manually link it to a PDF position
-- Click linked canvas elements to jump back to the referenced PDF area
-
-### Persistence
-
-- Projects persist in PGlite
-- PDF metadata persists in PGlite
-- PDF binaries persist on disk
-- File-specific links persist in PGlite
-- Excalidraw scenes persist in PGlite
-- Dropped image elements persist with their Excalidraw file payloads
-
-## Database Shape
-
-The desktop app initializes these tables on startup:
+Current tables:
 
 - `projects(id, name, emoji, created_at)`
 - `project_files(id, project_id, name, stored_rel_path, added_at, scene_elements_json, scene_app_state_json, scene_files_json)`
 - `file_links(file_id, element_id, pdf_link_json)`
 
 `project_files.project_id` and `file_links.file_id` use `ON DELETE CASCADE`.
+
+## Repository Structure
+
+```text
+.
+├── electron/
+│   ├── main/        # Electron app lifecycle, IPC handlers, database, filesystem
+│   └── preload/     # Typed renderer bridge
+├── public/          # Static assets, including the pdf.js worker
+├── src/
+│   ├── components/
+│   │   ├── CanvasPanel/
+│   │   ├── PdfPanel/
+│   │   └── ui/
+│   ├── hooks/
+│   ├── store/
+│   ├── types/
+│   └── utils/
+├── vite.config.ts
+├── tsup.electron.config.ts
+└── package.json
+```
 
 ## Development
 
@@ -84,19 +139,21 @@ The desktop app initializes these tables on startup:
 pnpm install
 ```
 
-If `pnpm` blocks Electron's install script in your environment, run:
+The `postinstall` step copies the pdf.js worker into `public/`.
+
+If Electron's install script is blocked in your environment, run:
 
 ```bash
 node node_modules/electron/install.js
 ```
 
-### Start Desktop Dev Mode
+### Start dev mode
 
 ```bash
 pnpm dev
 ```
 
-This starts:
+This runs:
 
 - the Vite renderer dev server
 - the Electron main/preload watcher
@@ -120,12 +177,12 @@ pnpm lint
 pnpm build
 ```
 
-This produces:
+Build output:
 
 - `dist/` for the renderer
 - `dist-electron/` for Electron main and preload
 
-### Package Desktop App
+### Package the desktop app
 
 ```bash
 pnpm dist
@@ -133,49 +190,11 @@ pnpm dist
 
 Packaged artifacts are written to `release/`.
 
-## Renderer API
+## Current Notes
 
-The renderer only talks to Electron through `window.desktopApi`.
-
-Available methods:
-
-- `bootstrap()`
-- `createProject()`
-- `renameProject({ projectId, name })`
-- `deleteProject(projectId)`
-- `importPdf({ projectId, name, bytes })`
-- `deletePdf({ projectId, fileId })`
-- `openWorkspace(fileId)`
-- `saveLinks(fileId, links)`
-- `saveScene(fileId, scene)`
-
-## Repository Structure
-
-```text
-.
-├── electron/
-│   ├── main/                 # BrowserWindow setup, PGlite, filesystem, IPC handlers
-│   └── preload/              # contextBridge API exposed to the renderer
-├── public/                   # sample PDF and pdf.js worker
-├── src/
-│   ├── components/
-│   │   ├── CanvasPanel/      # Excalidraw integration
-│   │   ├── PdfPanel/         # PDF viewer, selection, highlights, image overlays
-│   │   └── ui/               # UI primitives
-│   ├── store/                # Zustand stores for projects and workspaces
-│   ├── types/                # shared app and IPC types
-│   └── utils/                # drag payloads, coordinates, PDF image helpers
-├── tsconfig.electron.json
-├── tsup.electron.config.ts
-└── vite.config.ts
-```
-
-## Notes
-
-- This repo no longer targets browser-only persistence.
-- There is no migration path from the old `localStorage` MVP data.
-- The current production build passes with `pnpm build`.
-- The current lint pass succeeds with `pnpm lint`.
+- This is a desktop-only app in its current form.
+- There is no migration path from the older browser/localStorage versions.
+- Data is local-only; there is no sync or collaboration layer yet.
 
 ## License
 

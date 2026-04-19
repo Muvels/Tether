@@ -97,6 +97,8 @@ export interface DesktopApi {
   renamePdf: (input: RenamePdfInput) => Promise<void>;
   deletePdf: (input: DeletePdfInput) => Promise<void>;
   openSavedFilesDirectory: () => Promise<string>;
+  onRequestAppClose: (callback: () => void) => () => void;
+  confirmAppClose: () => Promise<void>;
   openWorkspace: (fileId: string) => Promise<WorkspaceData>;
   saveLinks: (fileId: string, links: LinkEntry[]) => Promise<void>;
   saveScene: (fileId: string, scene: StoredScene | null) => Promise<void>;
