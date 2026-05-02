@@ -43,16 +43,18 @@ export default function Layout({ left, right }: Props) {
 
   return (
     <div ref={containerRef} className="flex h-full w-full overflow-hidden">
-        <div className="h-full overflow-hidden" style={{ width: `${leftPct}%` }}>
-          {left}
-        </div>
+      <div className="h-full overflow-hidden" style={{ width: `${leftPct}%` }}>
+        {left}
+      </div>
 
-        <div
-          onMouseDown={onMouseDown}
-          className="h-full w-px cursor-col-resize bg-transparent hover:bg-blue-400 transition-colors flex-shrink-0"
-        />
+      <div
+        onMouseDown={onMouseDown}
+        className="group relative -mx-1.5 h-full w-3 flex-shrink-0 cursor-col-resize z-10"
+      >
+        <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-blue-400" />
+      </div>
 
-        <div className="h-full overflow-hidden flex-1">{right}</div>
+      <div className="h-full flex-1 overflow-hidden">{right}</div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { selectProjects, useProjectStore } from "@/store/useProjectStore";
 import { useLinkStore } from "@/store/useLinkStore";
+import { useUiStore } from "@/store/useUiStore";
 import { useWorkspaceNavigationGuard } from "@/hooks/useWorkspaceNavigationGuard";
 
 interface TabDescriptor {
@@ -23,6 +24,7 @@ export function DocumentTabs() {
   const reorderTabs = useProjectStore((s) => s.reorderTabs);
   const switchProject = useProjectStore((s) => s.switchProject);
   const loadFile = useLinkStore((s) => s.loadFile);
+  const closeSettings = useUiStore((s) => s.closeSettings);
   const { isNavigationBlocked } = useWorkspaceNavigationGuard();
 
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
@@ -48,6 +50,7 @@ export function DocumentTabs() {
   const handleActivate = useCallback(
     (tab: TabDescriptor) => {
       if (isNavigationBlocked) return;
+      closeSettings();
       if (tab.fileId === activeFileId) return;
 
       if (tab.projectId !== activeProjectId) {
@@ -59,6 +62,7 @@ export function DocumentTabs() {
     [
       activeFileId,
       activeProjectId,
+      closeSettings,
       isNavigationBlocked,
       loadFile,
       openFile,

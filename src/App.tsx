@@ -4,8 +4,10 @@ import Layout from "./components/Layout";
 import PdfViewer from "./components/PdfPanel/PdfViewer";
 import ExcalidrawCanvas from "./components/CanvasPanel/ExcalidrawCanvas";
 import ProjectPage from "./components/ProjectPage";
+import SettingsPage from "./components/SettingsPage";
 import { selectProjects, useProjectStore } from "./store/useProjectStore";
 import { useLinkStore } from "./store/useLinkStore";
+import { useUiStore } from "./store/useUiStore";
 import {
   SidebarInset,
   SidebarProvider,
@@ -32,6 +34,7 @@ function MainContent() {
   const activeFileId = useProjectStore((s) => s.activeFileId);
   const projects = useProjectStore(selectProjects);
   const isHydrated = useProjectStore((s) => s.isHydrated);
+  const view = useUiStore((s) => s.view);
 
   if (!isHydrated) {
     return (
@@ -39,6 +42,10 @@ function MainContent() {
         <div className="animate-spin h-8 w-8 rounded-full border-2 border-primary border-t-transparent" />
       </div>
     );
+  }
+
+  if (view === "settings") {
+    return <SettingsPage />;
   }
 
   if (!activeProjectId || !activeFileId) {
@@ -101,6 +108,8 @@ function MainInsetTopBar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const title = useTopBarTitle();
+  const view = useUiStore((s) => s.view);
+  const inSettingsView = view === "settings";
   const openTabs = useProjectStore((s) => s.openTabs);
   const addFile = useProjectStore((s) => s.addFile);
   const renameFile = useProjectStore((s) => s.renameFile);
@@ -113,8 +122,9 @@ function MainInsetTopBar() {
   const { guardNavigation, isNavigationBlocked } = useWorkspaceNavigationGuard();
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
-  const hasTabs = openTabs.length > 0;
-  const onProjectPage = Boolean(title) && !title?.fileId;
+  const hasTabs = openTabs.length > 0 && !inSettingsView;
+  const onProjectPage = Boolean(title) && !title?.fileId && !inSettingsView;
+  const topBarBackground = title?.fileId ? "var(--editor-surface)" : "var(--background)";
 
   const handleRenameDocument = useCallback(async () => {
     if (!title?.fileId || !title.fileName) return;
@@ -208,8 +218,11 @@ function MainInsetTopBar() {
 
   return (
     <div
-      className="app-drag-region pointer-events-auto absolute inset-x-0 top-0 z-20 flex h-[var(--app-topbar-height)] shrink-0 items-center gap-2 bg-muted/60 pr-2 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-muted/50"
-      style={{ paddingLeft: collapsed ? 78 : 12 }}
+      className="app-drag-region pointer-events-auto absolute inset-x-0 top-0 z-20 flex h-[var(--app-topbar-height)] shrink-0 items-center gap-2 pr-2"
+      style={{
+        paddingLeft: collapsed ? 78 : 12,
+        backgroundColor: topBarBackground,
+      }}
     >
       {collapsed && <SidebarTrigger className="h-6 w-9 shrink-0 text-sidebar-foreground/60" />}
 
@@ -217,7 +230,11 @@ function MainInsetTopBar() {
         <DocumentTabs />
       ) : (
         <div className="flex min-w-0 flex-1 items-center">
-          {title ? (
+          {inSettingsView ? (
+            <span className="min-w-0 truncate text-sm font-semibold text-foreground">
+              Settings
+            </span>
+          ) : title ? (
             <span className="min-w-0 truncate text-sm font-semibold text-foreground">
               {title.projectName}
             </span>
@@ -254,12 +271,12 @@ function MainInsetTopBar() {
         )}
         <DropdownMenu>
           <DropdownMenuTrigger
-            disabled={!title || isNavigationBlocked}
+            disabled={!title || isNavigationBlocked || inSettingsView}
             render={
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="h-6 w-7 text-muted-foreground"
+                className={`h-6 w-7 text-muted-foreground ${inSettingsView ? "hidden" : ""}`}
               />
             }
           >

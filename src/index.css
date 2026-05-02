@@ -16,6 +16,7 @@ body,
 
 :root {
   --app-topbar-height: 3rem;
+  --editor-surface: #fafafa;
 }
 
 /* Make the react-pdf text layer selectable and easier to grab */
@@ -161,6 +162,7 @@ body,
 }
 
 .dark {
+  --editor-surface: #1f1f1f;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);

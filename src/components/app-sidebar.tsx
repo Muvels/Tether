@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 import { useProjectStore } from "@/store/useProjectStore"
 import { useLinkStore } from "@/store/useLinkStore"
+import { useUiStore } from "@/store/useUiStore"
 import { useWorkspaceNavigationGuard } from "@/hooks/useWorkspaceNavigationGuard"
 
 const data = {
@@ -72,6 +73,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const switchWorkspace = useProjectStore((s) => s.switchWorkspace)
   const closeFile = useProjectStore((s) => s.closeFile)
   const loadFile = useLinkStore((s) => s.loadFile)
+  const view = useUiStore((s) => s.view)
+  const openSettings = useUiStore((s) => s.openSettings)
+  const closeSettings = useUiStore((s) => s.closeSettings)
   const { guardNavigation, isNavigationBlocked } = useWorkspaceNavigationGuard()
 
   const handleSwitchWorkspace = React.useCallback(
@@ -79,6 +83,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       if (workspaceId === activeWorkspaceId || isNavigationBlocked) return
 
       guardNavigation(async () => {
+        closeSettings()
         closeFile()
         await loadFile(null)
         switchWorkspace(workspaceId)
@@ -87,6 +92,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     [
       activeWorkspaceId,
       closeFile,
+      closeSettings,
       guardNavigation,
       isNavigationBlocked,
       loadFile,
@@ -106,6 +112,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       }
 
       guardNavigation(async () => {
+        closeSettings()
         closeFile()
         await loadFile(null)
         await createWorkspace({ ...workspace, name: candidate })
@@ -113,6 +120,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     },
     [
       closeFile,
+      closeSettings,
       createWorkspace,
       guardNavigation,
       isNavigationBlocked,
@@ -131,12 +139,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const navSecondary = React.useMemo(
     () =>
-      data.navSecondary.map((item) =>
-        item.title === "Open Workspace"
-          ? { ...item, onClick: openSavedFilesDirectory }
-          : item
-      ),
-    [openSavedFilesDirectory]
+      data.navSecondary.map((item) => {
+        if (item.title === "Open Workspace") {
+          return { ...item, onClick: openSavedFilesDirectory }
+        }
+        if (item.title === "Settings") {
+          return {
+            ...item,
+            onClick: openSettings,
+            isActive: view === "settings",
+          }
+        }
+        return item
+      }),
+    [openSavedFilesDirectory, openSettings, view]
   )
 
   return (

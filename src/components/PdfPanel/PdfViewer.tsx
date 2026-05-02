@@ -173,8 +173,11 @@ function PdfDocumentView({
     <div className="relative h-full">
       <div
         ref={scrollRef}
-        className="no-scrollbar h-full overflow-auto bg-muted/50 px-4 pb-4"
-        style={{ paddingTop: "calc(var(--app-topbar-height) + 1rem)" }}
+        className="no-scrollbar h-full overflow-auto px-4 pb-4"
+        style={{
+          paddingTop: "calc(var(--app-topbar-height) + 1rem)",
+          backgroundColor: "var(--editor-surface)",
+        }}
       >
         <Document
           key={currentFileId ?? "no-file"}
@@ -349,7 +352,10 @@ export default function PdfViewer() {
 
   if (isLoading || !pdfFile) {
     return (
-      <div className="flex items-center justify-center h-full bg-gray-100">
+      <div
+        className="flex h-full items-center justify-center"
+        style={{ backgroundColor: "var(--editor-surface)" }}
+      >
         <div className="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full" />
       </div>
     );

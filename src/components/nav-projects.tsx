@@ -15,6 +15,7 @@ import {
 import { PlusIcon, FileTextIcon, ChevronDownIcon } from "lucide-react"
 import { selectProjects, useProjectStore } from "@/store/useProjectStore"
 import { useLinkStore } from "@/store/useLinkStore"
+import { useUiStore } from "@/store/useUiStore"
 import { useWorkspaceNavigationGuard } from "@/hooks/useWorkspaceNavigationGuard"
 
 export function NavProjects() {
@@ -28,24 +29,28 @@ export function NavProjects() {
   const openFile = useProjectStore((s) => s.openFile)
   const closeFile = useProjectStore((s) => s.closeFile)
   const loadFile = useLinkStore((s) => s.loadFile)
+  const closeSettings = useUiStore((s) => s.closeSettings)
   const { isNavigationBlocked } = useWorkspaceNavigationGuard()
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const uploadTargetProjectId = useRef<string | null>(null)
 
   const handleCreate = () => {
+    closeSettings()
     closeFile()
     void loadFile(null)
     void createProject()
   }
 
   const handleSwitchProject = (id: string) => {
+    closeSettings()
     if (id === activeProjectId && !activeFileId) return
     switchProject(id)
     void loadFile(null)
   }
 
   const handleOpenFile = (projectId: string, fileId: string) => {
+    closeSettings()
     if (fileId === activeFileId) return
     if (isNavigationBlocked) return
     if (projectId !== activeProjectId) {
