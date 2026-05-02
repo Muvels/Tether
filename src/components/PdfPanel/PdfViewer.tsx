@@ -3,6 +3,8 @@ import { Document, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import PdfPage from "./PdfPage";
+import { useSidebar } from "@/components/ui/sidebar";
+import { useUiStore } from "@/store/useUiStore";
 import { useLinkStore } from "../../store/useLinkStore";
 import type { PdfDeepLink, PdfDocumentLike } from "../../types";
 
@@ -37,6 +39,10 @@ function PdfDocumentView({
   completeLinking: ReturnType<typeof useLinkStore.getState>["completeLinking"];
   currentFileId: string | null;
 }) {
+  const { state: sidebarState, isMobile } = useSidebar();
+  const autoFitPdfOnSidebarToggle = useUiStore(
+    (s) => s.autoFitPdfOnSidebarToggle,
+  );
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1);
   const [pdfDocument, setPdfDocument] = useState<PdfDocumentLike | null>(null);
@@ -46,6 +52,7 @@ function PdfDocumentView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const previousSidebarStateRef = useRef(sidebarState);
 
   const pageWidth = BASE_PAGE_WIDTH * scale;
 
@@ -147,6 +154,31 @@ function PdfDocumentView({
 
     return () => observerRef.current?.disconnect();
   }, [numPages, scale]);
+
+  useEffect(() => {
+    const hasSidebarStateChanged = previousSidebarStateRef.current !== sidebarState;
+    previousSidebarStateRef.current = sidebarState;
+
+    if (!hasSidebarStateChanged) {
+      return;
+    }
+
+    if (isMobile || !pdfDocument || !autoFitPdfOnSidebarToggle) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void fitDocumentToVisibleArea(pdfDocument).catch((error) => {
+        console.warn("PDF sidebar auto-fit error:", error);
+      });
+    }, 220);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    autoFitPdfOnSidebarToggle,
+    fitDocumentToVisibleArea,
+    isMobile,
+    pdfDocument,
+    sidebarState,
+  ]);
 
   const goToPage = useCallback((page: number) => {
     const el = pageRefs.current.get(page);

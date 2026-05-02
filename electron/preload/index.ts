@@ -17,6 +17,8 @@ import type {
 
 const desktopApi: DesktopApi = {
   bootstrap: () => ipcRenderer.invoke("app:bootstrap") as Promise<AppSnapshot>,
+  setActiveWorkspace: (workspaceId: string) =>
+    ipcRenderer.invoke("app:set-active-workspace", workspaceId),
   createWorkspace: (input: CreateWorkspaceInput) =>
     ipcRenderer.invoke("workspaces:create", input) as Promise<Workspace>,
   createProject: (workspaceId: string) =>

@@ -57,6 +57,11 @@ interface FileLinkRow {
   pdf_link_json: string;
 }
 
+interface AppStateRow {
+  key: string;
+  value_json: string;
+}
+
 let db: PGlite | null = null;
 let dataRoot = "";
 let pdfDir = "";
@@ -113,6 +118,23 @@ function mapWorkspaces(
       .filter((projectRow) => projectRow.workspace_id === workspaceRow.id)
       .map((projectRow) => mapProject(projectRow, fileRows)),
   }));
+}
+
+async function getAppStateValue<T>(target: Queryable, key: string, fallback: T): Promise<T> {
+  const result = await target.query<Pick<AppStateRow, "value_json">>(
+    "SELECT value_json FROM app_state WHERE key = $1",
+    [key],
+  );
+  return parseJson(result.rows[0]?.value_json ?? null, fallback);
+}
+
+async function setAppStateValue(target: Queryable, key: string, value: unknown) {
+  await target.query(
+    `INSERT INTO app_state (key, value_json)
+     VALUES ($1, $2)
+     ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json`,
+    [key, JSON.stringify(value)],
+  );
 }
 
 async function ensureDefaultWorkspace(target: Queryable) {
@@ -176,6 +198,11 @@ async function ensureSchema(target: Queryable) {
       element_id TEXT NOT NULL,
       pdf_link_json TEXT NOT NULL,
       PRIMARY KEY (file_id, element_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS app_state (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL
     );
   `);
 
@@ -244,14 +271,21 @@ export async function closeDatabase() {
 
 export async function bootstrap(): Promise<AppSnapshot> {
   const target = requireDb();
-  const [workspaceRows, projectRows, fileRows] = await Promise.all([
+  const [workspaceRows, projectRows, fileRows, savedActiveWorkspaceId] = await Promise.all([
     getWorkspaceRows(target),
     getProjectRows(target),
     getProjectFileRows(target),
+    getAppStateValue<string | null>(target, "activeWorkspaceId", null),
   ]);
+  const activeWorkspaceId = workspaceRows.some(
+    (workspaceRow) => workspaceRow.id === savedActiveWorkspaceId,
+  )
+    ? savedActiveWorkspaceId
+    : workspaceRows[0]?.id ?? null;
 
   return {
     workspaces: mapWorkspaces(workspaceRows, projectRows, fileRows),
+    activeWorkspaceId,
   };
 }
 
@@ -279,8 +313,14 @@ export async function createWorkspace(input: CreateWorkspaceInput) {
       workspace.createdAt,
     ],
   );
+  await setAppStateValue(target, "activeWorkspaceId", workspace.id);
 
   return workspace;
+}
+
+export async function setActiveWorkspace(workspaceId: string) {
+  const target = requireDb();
+  await setAppStateValue(target, "activeWorkspaceId", workspaceId);
 }
 
 export async function createProject(workspaceId: string) {

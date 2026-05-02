@@ -6,11 +6,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   CheckIcon,
   ChevronDownIcon,
   FolderOpenIcon,
   InfoIcon,
+  MaximizeIcon,
   MonitorIcon,
   MoonIcon,
   PaletteIcon,
@@ -85,6 +87,12 @@ function SectionHeader({ title }: { title: string }) {
 export default function SettingsPage() {
   const theme = useUiStore((s) => s.theme);
   const setTheme = useUiStore((s) => s.setTheme);
+  const autoFitPdfOnSidebarToggle = useUiStore(
+    (s) => s.autoFitPdfOnSidebarToggle,
+  );
+  const setAutoFitPdfOnSidebarToggle = useUiStore(
+    (s) => s.setAutoFitPdfOnSidebarToggle,
+  );
 
   const activeTheme =
     THEME_OPTIONS.find((option) => option.value === theme) ?? THEME_OPTIONS[0];
@@ -154,6 +162,22 @@ export default function SettingsPage() {
         </div>
 
         <div className="mb-6 rounded-lg border border-border/60 overflow-hidden">
+          <SectionHeader title="Behavior" />
+          <SettingsRow
+            icon={<MaximizeIcon className="h-4 w-4" />}
+            title="Auto-fit PDF after sidebar toggle"
+            description="Refit the PDF to the largest visible scale when the sidebar opens or closes"
+            action={
+              <Switch
+                checked={autoFitPdfOnSidebarToggle}
+                aria-label="Toggle auto-fit PDF after sidebar toggle"
+                onCheckedChange={setAutoFitPdfOnSidebarToggle}
+              />
+            }
+          />
+        </div>
+
+        <div className="mb-6 rounded-lg border border-border/60 overflow-hidden">
           <SectionHeader title="Storage" />
           <SettingsRow
             icon={<FolderOpenIcon className="h-4 w-4" />}
@@ -187,9 +211,6 @@ export default function SettingsPage() {
           />
         </div>
 
-        <p className="mt-8 text-center text-xs text-muted-foreground/50">
-          More settings coming soon
-        </p>
       </div>
     </div>
   );

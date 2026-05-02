@@ -65,6 +65,7 @@ export interface Workspace {
 
 export interface AppSnapshot {
   workspaces: Workspace[];
+  activeWorkspaceId: string | null;
 }
 
 export interface WorkspaceData {
@@ -108,6 +109,7 @@ export interface CreateWorkspaceInput {
 
 export interface DesktopApi {
   bootstrap: () => Promise<AppSnapshot>;
+  setActiveWorkspace: (workspaceId: string) => Promise<void>;
   createWorkspace: (input: CreateWorkspaceInput) => Promise<Workspace>;
   createProject: (workspaceId: string) => Promise<Project>;
   renameProject: (input: RenameProjectInput) => Promise<void>;

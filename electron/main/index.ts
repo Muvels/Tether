@@ -15,6 +15,7 @@ import {
   renameProject,
   saveLinks,
   saveScene,
+  setActiveWorkspace,
 } from "./database";
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
@@ -23,6 +24,9 @@ const approvedCloseWindows = new WeakSet<BrowserWindow>();
 
 function registerIpcHandlers() {
   ipcMain.handle("app:bootstrap", () => bootstrap());
+  ipcMain.handle("app:set-active-workspace", (_event, workspaceId: string) =>
+    setActiveWorkspace(workspaceId),
+  );
   ipcMain.handle("app:open-saved-files-directory", async () => {
     const directoryPath = getPdfDirectory();
     const openError = await shell.openPath(directoryPath);

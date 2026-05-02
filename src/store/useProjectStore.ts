@@ -46,6 +46,12 @@ function getProjectsForWorkspace(workspaces: Workspace[], workspaceId: string | 
   return getWorkspaceById(workspaces, workspaceId)?.projects ?? EMPTY_PROJECTS;
 }
 
+function persistActiveWorkspace(workspaceId: string) {
+  void window.desktopApi.setActiveWorkspace(workspaceId).catch((error) => {
+    console.error("Failed to persist active workspace", error);
+  });
+}
+
 function getNextActiveProject(projects: Project[], preferredId: string | null) {
   if (preferredId && projects.some((project) => project.id === preferredId)) {
     return preferredId;
@@ -110,7 +116,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   bootstrap: async () => {
     const snapshot = await window.desktopApi.bootstrap();
-    const activeWorkspaceId = snapshot.workspaces[0]?.id ?? null;
+    const activeWorkspaceId = snapshot.activeWorkspaceId;
     const projects = getProjectsForWorkspace(snapshot.workspaces, activeWorkspaceId);
 
     set({
@@ -135,20 +141,21 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     return workspace.id;
   },
 
-  switchWorkspace: (id) =>
-    set((state) => {
-      if (id === state.activeWorkspaceId) return state;
+  switchWorkspace: (id) => {
+    const state = get();
+    if (id === state.activeWorkspaceId) return;
 
-      const workspace = getWorkspaceById(state.workspaces, id);
-      if (!workspace) return state;
+    const workspace = getWorkspaceById(state.workspaces, id);
+    if (!workspace) return;
 
-      return {
-        activeWorkspaceId: workspace.id,
-        activeProjectId: getNextActiveProject(workspace.projects, null),
-        activeFileId: null,
-        openTabs: [],
-      };
-    }),
+    persistActiveWorkspace(workspace.id);
+    set({
+      activeWorkspaceId: workspace.id,
+      activeProjectId: getNextActiveProject(workspace.projects, null),
+      activeFileId: null,
+      openTabs: [],
+    });
+  },
 
   createProject: async () => {
     const { activeWorkspaceId } = get();
