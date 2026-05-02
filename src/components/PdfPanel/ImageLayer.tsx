@@ -1,36 +1,51 @@
 import { useEffect, useState, useCallback, type RefObject } from "react";
 import { v4 as uuid } from "uuid";
-import type { PdfDeepLink, PdfDocumentLike } from "../../types";
-import {
-  extractPageImages,
-  captureCanvasRegionData,
-  type PdfImageRect,
-} from "../../utils/pdfImages";
+import type { PdfDeepLink } from "../../types";
+import { captureCanvasRegionData, type PdfImageRect } from "../../utils/pdfImages";
 import { setDragData } from "../../utils/dragData";
 
 interface Props {
   pageNumber: number;
   containerRef: RefObject<HTMLDivElement | null>;
-  pdfDocument: PdfDocumentLike;
+  images: PdfImageRect[] | undefined;
+  loadImages: (pageNumber: number) => Promise<PdfImageRect[]>;
+  enabled: boolean;
 }
 
-export default function ImageLayer({ pageNumber, containerRef, pdfDocument }: Props) {
-  const [images, setImages] = useState<PdfImageRect[]>([]);
+export default function ImageLayer({
+  pageNumber,
+  containerRef,
+  images,
+  loadImages,
+  enabled,
+}: Props) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    pdfDocument
-      .getPage(pageNumber)
-      .then((page) => extractPageImages(page))
-      .then((result) => {
-        if (!cancelled) setImages(result);
-      })
-      .catch(() => {
-        if (!cancelled) setImages([]);
-      });
-    return () => { cancelled = true; };
-  }, [pdfDocument, pageNumber]);
+    if (!enabled || images !== undefined) return;
+
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+
+    const triggerLoad = () => {
+      void loadImages(pageNumber);
+    };
+
+    if ("requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(triggerLoad, { timeout: 250 });
+    } else {
+      timeoutId = globalThis.setTimeout(triggerLoad, 120);
+    }
+
+    return () => {
+      if (idleId !== null && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [enabled, images, loadImages, pageNumber]);
 
   const handleDragStart = useCallback(
     (e: React.DragEvent, img: PdfImageRect) => {
@@ -62,11 +77,13 @@ export default function ImageLayer({ pageNumber, containerRef, pdfDocument }: Pr
     [containerRef, pageNumber],
   );
 
-  if (images.length === 0) return null;
+  const pageImages = images ?? [];
+
+  if (!enabled || pageImages.length === 0) return null;
 
   return (
     <div className="absolute inset-0 pointer-events-none z-[5]">
-      {images.map((img, idx) => (
+      {pageImages.map((img, idx) => (
         <div
           key={idx}
           className="absolute pointer-events-auto cursor-grab active:cursor-grabbing"

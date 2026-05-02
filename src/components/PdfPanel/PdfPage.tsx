@@ -3,28 +3,42 @@ import { Page } from "react-pdf";
 import SelectionLayer from "./SelectionLayer";
 import HighlightLayer from "./HighlightLayer";
 import ImageLayer from "./ImageLayer";
-import type { PdfDeepLink, PdfDocumentLike } from "../../types";
+import type { PdfDeepLink } from "../../types";
+import type { PdfImageRect } from "../../utils/pdfImages";
 
 interface Props {
   pageNumber: number;
   width: number;
+  height: number;
+  renderTextLayer: boolean;
+  enableInteractiveLayers: boolean;
   onSelection: (link: PdfDeepLink) => void;
   highlights: PdfDeepLink[];
   activeLink: PdfDeepLink | null;
   linkingMode: boolean;
   onLinkingClick: (link: PdfDeepLink) => void;
-  pdfDocument: PdfDocumentLike | null;
+  images: PdfImageRect[] | undefined;
+  loadImages: (pageNumber: number) => Promise<PdfImageRect[]>;
+  onPageLoadSuccess: (
+    pageNumber: number,
+    page: import("pdfjs-dist").PDFPageProxy,
+  ) => void;
 }
 
 export default function PdfPage({
   pageNumber,
   width,
+  height,
+  renderTextLayer,
+  enableInteractiveLayers,
   onSelection,
   highlights,
   activeLink,
   linkingMode,
   onLinkingClick,
-  pdfDocument,
+  images,
+  loadImages,
+  onPageLoadSuccess,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -50,36 +64,46 @@ export default function PdfPage({
   return (
     <div
       ref={containerRef}
-      className="relative mb-4 shadow-lg ring-1 ring-border rounded-sm"
-      style={{ width }}
+      className="relative rounded-sm shadow-lg ring-1 ring-border"
+      style={{ width, height }}
       onClick={handleClick}
     >
       <Page
         pageNumber={pageNumber}
         width={width}
-        renderTextLayer={true}
+        renderTextLayer={renderTextLayer}
         renderAnnotationLayer={false}
+        onLoadSuccess={(page) => {
+          onPageLoadSuccess(
+            pageNumber,
+            page as import("pdfjs-dist").PDFPageProxy,
+          );
+        }}
       />
 
-      {pdfDocument && (
-        <ImageLayer
-          pageNumber={pageNumber}
-          containerRef={containerRef}
-          pdfDocument={pdfDocument}
-        />
+      {enableInteractiveLayers && (
+        <>
+          <ImageLayer
+            pageNumber={pageNumber}
+            containerRef={containerRef}
+            images={images}
+            loadImages={loadImages}
+            enabled={enableInteractiveLayers}
+          />
+
+          <HighlightLayer
+            containerRef={containerRef}
+            highlights={pageHighlights}
+            activeHighlight={isActivePage ? activeLink : null}
+          />
+
+          <SelectionLayer
+            pageNumber={pageNumber}
+            containerRef={containerRef}
+            onSelection={onSelection}
+          />
+        </>
       )}
-
-      <HighlightLayer
-        containerRef={containerRef}
-        highlights={pageHighlights}
-        activeHighlight={isActivePage ? activeLink : null}
-      />
-
-      <SelectionLayer
-        pageNumber={pageNumber}
-        containerRef={containerRef}
-        onSelection={onSelection}
-      />
     </div>
   );
 }
