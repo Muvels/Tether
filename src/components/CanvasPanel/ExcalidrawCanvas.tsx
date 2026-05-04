@@ -573,7 +573,7 @@ export default function ExcalidrawCanvas() {
         <WelcomeScreen>
           <WelcomeScreen.Center>
             <WelcomeScreen.Center.Heading>
-              PDF Canvas Linker
+              Tether
             </WelcomeScreen.Center.Heading>
             <WelcomeScreen.Center.Menu>
               <WelcomeScreen.Center.MenuItem onSelect={() => undefined}>

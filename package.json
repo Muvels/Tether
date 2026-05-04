@@ -1,7 +1,7 @@
 {
-  "name": "pdf-canvas-linker",
+  "name": "tether",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "packageManager": "pnpm@10.24.0",
   "main": "dist-electron/main.cjs",
   "type": "module",
@@ -65,8 +65,8 @@
     "wait-on": "^8.0.5"
   },
   "build": {
-    "appId": "dev.mattemarolt.pdfcanvaslinker",
-    "productName": "PDF Canvas Linker",
+    "appId": "dev.mattemarolt.tether",
+    "productName": "Tether",
     "files": [
       "dist/**/*",
       "dist-electron/**/*",

@@ -1,6 +1,6 @@
-# PDF Canvas Linker
+# Tether
 
-PDF Canvas Linker is a local-first Electron desktop app for turning PDFs into source-linked visual workspaces.
+Tether is a local-first Electron desktop app for turning PDFs into source-linked visual workspaces.
 
 It pairs a PDF reader with an Excalidraw canvas so you can pull text, image regions, and arbitrary page areas out of a document, arrange them visually, and jump back to the exact source location later.
 

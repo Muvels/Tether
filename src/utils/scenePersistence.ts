@@ -6,7 +6,7 @@ const DEFAULT_VIEW_BACKGROUND_COLOR = "#fafafa";
 const DEFAULT_GRID_SIZE = 20;
 const EXCALIDRAW_DOCUMENT_TYPE = "excalidraw";
 const EXCALIDRAW_DOCUMENT_VERSION = 2;
-const EXCALIDRAW_DOCUMENT_SOURCE = "pdf-canvas-linker";
+const EXCALIDRAW_DOCUMENT_SOURCE = "tether";
 type PersistedAppState = Pick<AppState, "viewBackgroundColor" | "gridSize">;
 
 interface SceneCustomData {

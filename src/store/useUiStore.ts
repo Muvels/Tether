@@ -3,13 +3,18 @@ import { create } from "zustand";
 export type AppView = "workspace" | "settings";
 export type ThemePreference = "system" | "light" | "dark";
 
-const THEME_STORAGE_KEY = "pdf-canvas-linker:theme";
+const THEME_STORAGE_KEY = "tether:theme";
+const LEGACY_THEME_STORAGE_KEY = "pdf-canvas-linker:theme";
 const AUTO_FIT_PDF_ON_SIDEBAR_TOGGLE_STORAGE_KEY =
+  "tether:auto-fit-pdf-on-sidebar-toggle";
+const LEGACY_AUTO_FIT_PDF_ON_SIDEBAR_TOGGLE_STORAGE_KEY =
   "pdf-canvas-linker:auto-fit-pdf-on-sidebar-toggle";
 
 function readStoredTheme(): ThemePreference {
   if (typeof window === "undefined") return "system";
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  const stored =
+    window.localStorage.getItem(THEME_STORAGE_KEY) ??
+    window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
   if (stored === "light" || stored === "dark" || stored === "system") {
     return stored;
   }
@@ -49,7 +54,7 @@ export const useUiStore = create<UiState>((set) => {
   const initialTheme = readStoredTheme();
   const initialAutoFitPdfOnSidebarToggle = readStoredBoolean(
     AUTO_FIT_PDF_ON_SIDEBAR_TOGGLE_STORAGE_KEY,
-    true,
+    readStoredBoolean(LEGACY_AUTO_FIT_PDF_ON_SIDEBAR_TOGGLE_STORAGE_KEY, true),
   );
   applyTheme(initialTheme);
 

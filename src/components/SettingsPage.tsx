@@ -111,7 +111,7 @@ export default function SettingsPage() {
         <div className="mb-10">
           <h1 className="text-4xl font-bold text-foreground">Settings</h1>
           <p className="mt-2 text-xs text-muted-foreground">
-            Configure how PDF Canvas Linker looks and behaves.
+            Configure how Tether looks and behaves.
           </p>
         </div>
 
@@ -201,7 +201,7 @@ export default function SettingsPage() {
           <SectionHeader title="About" />
           <SettingsRow
             icon={<InfoIcon className="h-4 w-4" />}
-            title="PDF Canvas Linker"
+            title="Tether"
             description={`Version ${APP_VERSION}`}
             action={
               <span className="rounded-md border border-border/60 bg-muted/40 px-2 py-1 font-mono text-xs text-muted-foreground">

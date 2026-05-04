@@ -48,7 +48,7 @@ function buildSceneDocument(scene) {
     {
       type: "excalidraw",
       version: 2,
-      source: "pdf-canvas-linker",
+      source: "tether",
       elements: scene?.elements ?? [],
       appState: scene?.appState ?? {
         viewBackgroundColor: DEFAULT_VIEW_BACKGROUND_COLOR,
