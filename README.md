@@ -6,16 +6,16 @@ It pairs a PDF reader with an Excalidraw canvas so you can pull text, image regi
 
 ## What The App Is Now
 
-This project is no longer the earlier browser-only experiment. The current version is an Electron app with:
+The current version is an Electron app with:
 
 - a real local persistence layer
+- a workspace -> project -> document hierarchy
 - filesystem-backed PDF storage
-- a project-based workspace model
 - multi-document tabs
 - per-document Excalidraw scenes
 - source links between canvas elements and PDF locations
 
-Everything is stored locally on the machine. There is no cloud sync or shared backend in the current implementation.
+Everything is stored locally on the machine.
 
 ## Core Workflow
 
@@ -28,15 +28,16 @@ Everything is stored locally on the machine. There is no cloud sync or shared ba
 
 ## Current Capabilities
 
-### Projects and documents
+### Workspaces, projects, and documents
 
+- Create and switch between workspaces
 - Create, rename, and delete projects
 - Import multiple PDFs per project
 - Rename and delete PDFs
 - Open documents from the sidebar or the project page
 - Work with multiple open document tabs
 - Reorder tabs with drag and drop
-- Open the saved PDF directory from the sidebar
+- Reveal the app-data directory from the sidebar or settings
 
 ### PDF interaction
 
@@ -83,8 +84,10 @@ Normalized coordinates are stored per page, which makes links resilient to zoom 
 - Electron `preload` exposes a typed bridge at `window.desktopApi`
 - React + Vite power the renderer
 - Zustand stores manage project state and active workspace state
-- PGlite stores projects, file metadata, links, and Excalidraw scene data
+- PGlite stores workspace metadata, project metadata, file metadata, and app state
 - PDF binaries are stored as real files on disk
+- Canvas scenes are stored as `.excalidraw` JSON files on disk
+- PDF links are embedded in Excalidraw element `customData` and derived from the saved scene
 
 ## Local Data Layout
 
@@ -93,16 +96,18 @@ App data lives under the Electron `userData` directory:
 ```text
 <userData>/app-data/
 ├── db/          # PGlite data directory
-└── pdfs/        # Stored PDFs as <fileId>.pdf
+├── pdfs/        # Stored PDFs as <fileId>.pdf
+└── canvases/    # Stored scenes as <fileId>.excalidraw
 ```
 
 Current tables:
 
-- `projects(id, name, emoji, created_at)`
-- `project_files(id, project_id, name, stored_rel_path, added_at, scene_elements_json, scene_app_state_json, scene_files_json)`
-- `file_links(file_id, element_id, pdf_link_json)`
+- `workspaces(id, name, icon, color, plan, created_at)`
+- `projects(id, workspace_id, name, emoji, created_at)`
+- `project_files(id, project_id, name, stored_rel_path, scene_rel_path, added_at)`
+- `app_state(key, value_json)`
 
-`project_files.project_id` and `file_links.file_id` use `ON DELETE CASCADE`.
+`project_files.project_id` uses `ON DELETE CASCADE`.
 
 ## Repository Structure
 
@@ -189,13 +194,3 @@ pnpm dist
 ```
 
 Packaged artifacts are written to `release/`.
-
-## Current Notes
-
-- This is a desktop-only app in its current form.
-- There is no migration path from the older browser/localStorage versions.
-- Data is local-only; there is no sync or collaboration layer yet.
-
-## License
-
-No license has been added yet.
