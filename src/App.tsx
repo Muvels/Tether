@@ -466,12 +466,78 @@ function WorkspaceCloseGuard() {
   );
 }
 
+function MigrationRequiredScreen() {
+  const migrationMessage = useProjectStore((s) => s.migrationMessage);
+  const appDataPath = useProjectStore((s) => s.appDataPath);
+  const command = appDataPath
+    ? `node scripts/migrate-scenes-to-excalidraw.mjs --app-data "${appDataPath}"`
+    : 'node scripts/migrate-scenes-to-excalidraw.mjs --app-data "<path-to-app-data>"';
+
+  return (
+    <div className="flex min-h-svh items-center justify-center bg-background px-6 py-10">
+      <div className="w-full max-w-2xl rounded-2xl border border-border bg-card p-8 shadow-sm">
+        <div className="space-y-3">
+          <h1 className="text-2xl font-semibold text-foreground">
+            Canvas migration required
+          </h1>
+          <p className="text-sm leading-6 text-muted-foreground">
+            {migrationMessage ??
+              "This app data still uses the legacy database-backed canvas format."}
+          </p>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Reveal the app data directory, then run the migration script below before
+            reopening workspaces in this build.
+          </p>
+        </div>
+
+        <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4">
+          <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            Migration command
+          </p>
+          <pre className="overflow-x-auto rounded-lg bg-background px-3 py-3 text-sm text-foreground">
+            <code>{command}</code>
+          </pre>
+        </div>
+
+        {appDataPath && (
+          <p className="mt-4 text-sm text-muted-foreground">
+            App data: <span className="font-mono text-foreground">{appDataPath}</span>
+          </p>
+        )}
+
+        <div className="mt-6 flex gap-3">
+          <Button
+            type="button"
+            onClick={() => {
+              void window.desktopApi.openSavedFilesDirectory().catch((error) => {
+                console.error("Failed to reveal app data directory", error);
+              });
+            }}
+          >
+            Reveal app-data
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const bootstrap = useProjectStore((s) => s.bootstrap);
+  const isHydrated = useProjectStore((s) => s.isHydrated);
+  const storageStatus = useProjectStore((s) => s.storageStatus);
 
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+
+  if (isHydrated && storageStatus === "migration-required") {
+    return (
+      <TooltipProvider>
+        <MigrationRequiredScreen />
+      </TooltipProvider>
+    );
+  }
 
   return (
     <TooltipProvider>

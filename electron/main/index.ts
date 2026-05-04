@@ -7,13 +7,12 @@ import {
   createProject,
   deletePdf,
   deleteProject,
-  getPdfDirectory,
+  getDataRoot,
   importPdf,
   initializeDatabase,
   openWorkspace,
   renamePdf,
   renameProject,
-  saveLinks,
   saveScene,
   setActiveWorkspace,
 } from "./database";
@@ -28,7 +27,7 @@ function registerIpcHandlers() {
     setActiveWorkspace(workspaceId),
   );
   ipcMain.handle("app:open-saved-files-directory", async () => {
-    const directoryPath = getPdfDirectory();
+    const directoryPath = getDataRoot();
     const openError = await shell.openPath(directoryPath);
 
     if (openError) {
@@ -51,7 +50,6 @@ function registerIpcHandlers() {
     deletePdf(input.projectId, input.fileId),
   );
   ipcMain.handle("workspace:open", (_event, fileId: string) => openWorkspace(fileId));
-  ipcMain.handle("workspace:save-links", (_event, fileId: string, links) => saveLinks(fileId, links));
   ipcMain.handle("workspace:save-scene", (_event, fileId: string, scene) => saveScene(fileId, scene));
   ipcMain.handle("app:confirm-close", (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);

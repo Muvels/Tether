@@ -66,6 +66,9 @@ export interface Workspace {
 export interface AppSnapshot {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
+  storageStatus: "ready" | "migration-required";
+  migrationMessage: string | null;
+  appDataPath: string;
 }
 
 export interface WorkspaceData {
@@ -121,6 +124,5 @@ export interface DesktopApi {
   onRequestAppClose: (callback: () => void) => () => void;
   confirmAppClose: () => Promise<void>;
   openWorkspace: (fileId: string) => Promise<WorkspaceData>;
-  saveLinks: (fileId: string, links: LinkEntry[]) => Promise<void>;
   saveScene: (fileId: string, scene: StoredScene | null) => Promise<void>;
 }

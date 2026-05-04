@@ -8,39 +8,27 @@ import {
 import "@excalidraw/excalidraw/index.css";
 import type {
   BinaryFileData,
-  ExcalidrawImperativeAPI,
+  BinaryFiles,
   DataURL,
+  ExcalidrawImperativeAPI,
+  ExcalidrawProps,
 } from "@excalidraw/excalidraw/types";
-import type { FileId } from "@excalidraw/excalidraw/element/types";
+import type {
+  FileId,
+  OrderedExcalidrawElement,
+} from "@excalidraw/excalidraw/element/types";
 import { getDragData, hasDragData } from "../../utils/dragData";
 import { useLinkStore } from "../../store/useLinkStore";
 import { useProjectStore } from "../../store/useProjectStore";
-import type { PdfDeepLink, StoredScene } from "../../types";
+import type { PdfDeepLink } from "../../types";
+import {
+  normalizeSceneSnapshot,
+  upsertElementPdfLink,
+} from "../../utils/scenePersistence";
 
-function normalizeSceneSnapshot(scene: StoredScene): StoredScene | null {
-  const hasElements = scene.elements.length > 0;
-  const hasFiles = Object.keys(scene.files).length > 0;
-  const hasCustomBackground = scene.appState.viewBackgroundColor !== "#fafafa";
-  const hasCustomGrid = scene.appState.gridSize !== 20;
-
-  if (!hasElements && !hasFiles && !hasCustomBackground && !hasCustomGrid) {
-    return null;
-  }
-
-  return scene;
-}
-
-function buildSceneSnapshot(api: ExcalidrawImperativeAPI): StoredScene {
-  const appState = api.getAppState();
-  return {
-    elements: api.getSceneElements(),
-    appState: {
-      viewBackgroundColor: appState.viewBackgroundColor,
-      gridSize: appState.gridSize ?? 20,
-    },
-    files: api.getFiles(),
-  };
-}
+const DEFAULT_INITIAL_DATA = {
+  appState: { viewBackgroundColor: "#fafafa" },
+} as ExcalidrawProps["initialData"];
 
 export default function ExcalidrawCanvas() {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
@@ -50,21 +38,34 @@ export default function ExcalidrawCanvas() {
   const hasUnsavedChanges = useLinkStore((state) => state.hasUnsavedChanges);
   const isSaving = useLinkStore((state) => state.isSaving);
   const saveCurrentFile = useLinkStore((state) => state.saveCurrentFile);
-  const addLink = useLinkStore((state) => state.addLink);
-  const removeLink = useLinkStore((state) => state.removeLink);
+  const syncSceneState = useLinkStore((state) => state.syncSceneState);
   const setActiveLink = useLinkStore((state) => state.setActiveLink);
   const links = useLinkStore((state) => state.links);
   const startLinking = useLinkStore((state) => state.startLinking);
   const linkingElementId = useLinkStore((state) => state.linkingElementId);
   const cancelLinking = useLinkStore((state) => state.cancelLinking);
-  const setScene = useLinkStore((state) => state.setScene);
-  const syncSceneBaseline = useLinkStore((state) => state.syncSceneBaseline);
-  const scene = useLinkStore((state) => state.scene);
+  const clearPendingLinkedElement = useLinkStore((state) => state.clearPendingLinkedElement);
+  const pendingLinkedElement = useLinkStore((state) => state.pendingLinkedElement);
+  const getLinkForElement = useLinkStore((state) => state.getLinkForElement);
+  const getSceneRevisionForFile = useLinkStore((state) => state.getSceneRevisionForFile);
+  const persistedScene = useLinkStore((state) =>
+    state.currentFileId
+      ? state.workspaceSessions[state.currentFileId]?.scene ?? null
+      : null,
+  );
   const activeFileId = useProjectStore((state) => state.activeFileId);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
-  const cleanupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const applyingScene = useRef(false);
-  const appliedFileId = useRef<string | null | undefined>(undefined);
+  const sceneMutationArmedRef = useRef(false);
+  const latestElementsRef = useRef<readonly OrderedExcalidrawElement[] | null>(null);
+  const latestFilesRef = useRef<BinaryFiles | null>(null);
+  const latestViewBackgroundColorRef = useRef("#fafafa");
+  const latestGridSizeRef = useRef(20);
+  const latestSceneRevisionRef = useRef(0);
+
+  const armSceneMutation = useCallback(() => {
+    sceneMutationArmedRef.current = true;
+  }, []);
 
   const selectedHasLink = useMemo(() => {
     if (!selectedElementId) return false;
@@ -78,16 +79,16 @@ export default function ExcalidrawCanvas() {
   }, [api, links, selectedElementId]);
 
   const initialData = useMemo(() => {
-    if (!scene) {
-      return { appState: { viewBackgroundColor: "#fafafa" } };
+    if (!persistedScene) {
+      return DEFAULT_INITIAL_DATA;
     }
 
     return {
-      elements: scene.elements as Parameters<ExcalidrawImperativeAPI["updateScene"]>[0]["elements"],
-      appState: scene.appState,
-      files: scene.files as Record<string, BinaryFileData>,
-    } as React.ComponentProps<typeof Excalidraw>["initialData"];
-  }, [scene]);
+      elements: persistedScene.elements as Parameters<ExcalidrawImperativeAPI["updateScene"]>[0]["elements"],
+      appState: persistedScene.appState,
+      files: persistedScene.files as Record<string, BinaryFileData>,
+    } as ExcalidrawProps["initialData"];
+  }, [persistedScene]);
 
   const handleLinkAction = useCallback(() => {
     if (linkingElementId) {
@@ -108,32 +109,66 @@ export default function ExcalidrawCanvas() {
   ]);
 
   useEffect(() => {
-    if (!api) return;
-    if (appliedFileId.current === currentFileId) return;
-
-    appliedFileId.current = currentFileId;
-    applyingScene.current = true;
-    api.resetScene();
-
-    if (scene) {
-      const files = Object.values(scene.files);
-      if (files.length > 0) {
-        api.addFiles(files as BinaryFileData[]);
-      }
-      api.updateScene({
-        elements: scene.elements as Parameters<ExcalidrawImperativeAPI["updateScene"]>[0]["elements"],
-        appState: scene.appState,
-      });
-    }
+    latestElementsRef.current = null;
+    latestFilesRef.current = null;
+    latestSceneRevisionRef.current = getSceneRevisionForFile(currentFileId);
+    latestViewBackgroundColorRef.current =
+      persistedScene?.appState.viewBackgroundColor ?? "#fafafa";
+    latestGridSizeRef.current = persistedScene?.appState.gridSize ?? 20;
 
     requestAnimationFrame(() => {
+      setSelectedElementId(null);
+    });
+  }, [currentFileId, getSceneRevisionForFile, persistedScene]);
+
+  useEffect(() => {
+    if (!api) return;
+
+    applyingScene.current = true;
+    requestAnimationFrame(() => {
+      const appState = api.getAppState();
+      latestElementsRef.current = api.getSceneElements() as readonly OrderedExcalidrawElement[];
+      latestFilesRef.current = api.getFiles() as BinaryFiles;
+      latestViewBackgroundColorRef.current = appState.viewBackgroundColor;
+      latestGridSizeRef.current = appState.gridSize ?? 20;
+
       requestAnimationFrame(() => {
-        syncSceneBaseline(normalizeSceneSnapshot(buildSceneSnapshot(api)));
-        setSelectedElementId(null);
         applyingScene.current = false;
       });
     });
-  }, [api, currentFileId, scene, syncSceneBaseline]);
+  }, [api, currentFileId, persistedScene]);
+
+  useEffect(() => {
+    if (!api || !pendingLinkedElement || pendingLinkedElement.fileId !== currentFileId) return;
+
+    const { didUpdate, elements } = upsertElementPdfLink(
+      api.getSceneElements() as readonly OrderedExcalidrawElement[],
+      pendingLinkedElement.elementId,
+      pendingLinkedElement.pdfLink,
+    );
+
+    clearPendingLinkedElement();
+
+    if (!didUpdate) {
+      return;
+    }
+
+    armSceneMutation();
+    applyingScene.current = true;
+    api.updateScene({ elements });
+    setActiveLink(pendingLinkedElement.pdfLink);
+
+    requestAnimationFrame(() => {
+      applyingScene.current = false;
+    });
+  }, [
+    api,
+    armSceneMutation,
+    clearPendingLinkedElement,
+    currentFileId,
+    pendingLinkedElement,
+    setActiveLink,
+  ]);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -200,62 +235,79 @@ export default function ExcalidrawCanvas() {
     };
   }, [activeFileId, handleLinkAction, linkingElementId, selectedElementId, selectedHasLink]);
 
-  const handleChange = useCallback(() => {
-    if (!api || applyingScene.current) return;
-    if (appliedFileId.current !== currentFileId) return;
+  const handleChange = useCallback<NonNullable<ExcalidrawProps["onChange"]>>(
+    (elements, appState, files) => {
+      if (!currentFileId || applyingScene.current) return;
 
-    const appState = api.getAppState();
-    const selectedId = Object.keys(appState.selectedElementIds).find(
-      (id) => appState.selectedElementIds[id],
-    ) ?? null;
-    setSelectedElementId(selectedId);
+      const selectedId = Object.keys(appState.selectedElementIds).find(
+        (id) => appState.selectedElementIds[id],
+      ) ?? null;
+      setSelectedElementId(selectedId);
 
-    if (cleanupTimer.current) clearTimeout(cleanupTimer.current);
-    cleanupTimer.current = setTimeout(() => {
-      const currentElements = api.getSceneElements();
-      const elementIds = new Set(currentElements.map((element) => element.id));
-      const storeLinks = useLinkStore.getState().links;
-      for (const link of storeLinks) {
-        if (!elementIds.has(link.elementId)) {
-          removeLink(link.elementId);
-        }
+      const nextGridSize = appState.gridSize ?? 20;
+      const didPersistedSceneChange =
+        elements !== latestElementsRef.current ||
+        files !== latestFilesRef.current ||
+        appState.viewBackgroundColor !== latestViewBackgroundColorRef.current ||
+        nextGridSize !== latestGridSizeRef.current;
+
+      if (!didPersistedSceneChange) {
+        return;
       }
-    }, 200);
 
-    setScene(normalizeSceneSnapshot(buildSceneSnapshot(api)));
-  }, [api, currentFileId, removeLink, setScene]);
+      latestElementsRef.current = elements as readonly OrderedExcalidrawElement[];
+      latestFilesRef.current = files as BinaryFiles;
+      latestViewBackgroundColorRef.current = appState.viewBackgroundColor;
+      latestGridSizeRef.current = nextGridSize;
 
-  useEffect(() => {
+      if (sceneMutationArmedRef.current) {
+        latestSceneRevisionRef.current += 1;
+        sceneMutationArmedRef.current = false;
+      }
+
+      syncSceneState(
+        currentFileId,
+        normalizeSceneSnapshot(
+          latestElementsRef.current,
+          {
+            viewBackgroundColor: latestViewBackgroundColorRef.current,
+            gridSize: latestGridSizeRef.current,
+          },
+          latestFilesRef.current,
+        ),
+        latestSceneRevisionRef.current,
+      );
+    },
+    [currentFileId, syncSceneState],
+  );
+
+  const handlePointerDown = useCallback(() => {
     if (!api) return;
-    const linkedIds = new Set(links.map((link) => link.elementId));
-    const elements = api.getSceneElements();
-    let changed = false;
-    const updated = elements.map((element) => {
-      if (element.customData?.pdfLink || element.customData?.pdfLinkLabel) return element;
+    armSceneMutation();
 
-      if (linkedIds.has(element.id) && element.strokeColor !== "#3b82f6") {
-        changed = true;
-        return { ...element, strokeColor: "#3b82f6" };
+    requestAnimationFrame(() => {
+      const appState = api.getAppState();
+      const selectedId = Object.keys(appState.selectedElementIds).find(
+        (id) => appState.selectedElementIds[id],
+      );
+      if (!selectedId) return;
+
+      const elements = api.getSceneElements();
+      const element = elements.find((candidate) => candidate.id === selectedId);
+      if (!element) return;
+
+      const pdfLink = (element.customData as { pdfLink?: PdfDeepLink } | undefined)?.pdfLink;
+      if (pdfLink) {
+        setActiveLink(pdfLink);
+        return;
       }
-      return element;
+
+      const storeLink = getLinkForElement(selectedId);
+      if (storeLink) {
+        setActiveLink(storeLink);
+      }
     });
-
-    if (changed) {
-      applyingScene.current = true;
-      api.updateScene({ elements: updated });
-      requestAnimationFrame(() => {
-        applyingScene.current = false;
-      });
-    }
-  }, [api, links]);
-
-  useEffect(() => {
-    return () => {
-      if (cleanupTimer.current) {
-        clearTimeout(cleanupTimer.current);
-      }
-    };
-  }, []);
+  }, [api, armSceneMutation, getLinkForElement, setActiveLink]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (hasDragData(e.dataTransfer)) {
@@ -273,6 +325,7 @@ export default function ExcalidrawCanvas() {
       setDragOver(false);
       const pdfLink = getDragData(e.dataTransfer);
       if (!pdfLink || !api) return;
+      armSceneMutation();
 
       const appState = api.getAppState();
       const { x: canvasX, y: canvasY } = viewportCoordsToSceneCoords(
@@ -468,40 +521,16 @@ export default function ExcalidrawCanvas() {
           elements: [...api.getSceneElements(), ...newElements],
         });
       }
-
-      addLink({ elementId, pdfLink: linkWithoutBlob });
     },
-    [api, addLink],
+    [api, armSceneMutation],
   );
-
-  const handlePointerDown = useCallback(() => {
-    if (!api) return;
-
-    requestAnimationFrame(() => {
-      const appState = api.getAppState();
-      const selectedIds = appState.selectedElementIds;
-      const selectedId = Object.keys(selectedIds).find((id) => selectedIds[id]);
-      if (!selectedId) return;
-
-      const elements = api.getSceneElements();
-      const element = elements.find((candidate) => candidate.id === selectedId);
-      if (!element) return;
-
-      const pdfLink = (element.customData as { pdfLink?: PdfDeepLink } | undefined)?.pdfLink;
-      if (pdfLink) {
-        setActiveLink(pdfLink);
-        return;
-      }
-
-      const storeLink = useLinkStore.getState().getLinkForElement(selectedId);
-      if (storeLink) {
-        setActiveLink(storeLink);
-      }
-    });
-  }, [api, setActiveLink]);
 
   const handleKeyDownCapture = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!["Shift", "Meta", "Control", "Alt"].includes(event.key)) {
+        armSceneMutation();
+      }
+
       if (event.key.toLowerCase() !== "s" || (!event.metaKey && !event.ctrlKey)) {
         return;
       }
@@ -515,7 +544,7 @@ export default function ExcalidrawCanvas() {
         console.error("Failed to save workspace from canvas shortcut", error);
       });
     },
-    [currentFileId, hasUnsavedChanges, isSaving, saveCurrentFile],
+    [armSceneMutation, currentFileId, hasUnsavedChanges, isSaving, saveCurrentFile],
   );
 
   return (
@@ -529,6 +558,7 @@ export default function ExcalidrawCanvas() {
       onPointerDown={handlePointerDown}
     >
       <Excalidraw
+        key={currentFileId ?? "empty-canvas"}
         excalidrawAPI={(instance) => setApi(instance)}
         onChange={handleChange}
         initialData={initialData}
@@ -546,21 +576,16 @@ export default function ExcalidrawCanvas() {
               PDF Canvas Linker
             </WelcomeScreen.Center.Heading>
             <WelcomeScreen.Center.Menu>
-              <WelcomeScreen.Center.MenuItemHelp />
+              <WelcomeScreen.Center.MenuItem onSelect={() => undefined}>
+                Drag text, areas, or images from the PDF to build a linked canvas.
+              </WelcomeScreen.Center.MenuItem>
             </WelcomeScreen.Center.Menu>
           </WelcomeScreen.Center>
         </WelcomeScreen>
       </Excalidraw>
 
       {dragOver && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-blue-50/80 border-2 border-dashed border-blue-400 rounded pointer-events-none">
-          <div className="flex flex-col items-center gap-2">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            <span className="text-sm font-medium text-blue-600">Drop here to create linked element</span>
-          </div>
-        </div>
+        <div className="pointer-events-none absolute inset-0 z-10 rounded-lg border-2 border-dashed border-primary/60 bg-primary/5" />
       )}
     </div>
   );

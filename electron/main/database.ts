@@ -5,14 +5,17 @@ import { PGlite } from "@electric-sql/pglite";
 import type {
   AppSnapshot,
   CreateWorkspaceInput,
-  ImportPdfInput,
-  LinkEntry,
   Project,
   ProjectFile,
   StoredScene,
   Workspace,
   WorkspaceData,
 } from "../../src/types";
+import {
+  deserializeSceneDocument,
+  extractLinksFromScene,
+  serializeSceneDocument,
+} from "../../src/utils/scenePersistence";
 
 const DEFAULT_WORKSPACE_NAME = "Personal";
 const DEFAULT_WORKSPACE_ICON = "terminal";
@@ -20,6 +23,10 @@ const DEFAULT_WORKSPACE_COLOR = "#3b82f6";
 const DEFAULT_WORKSPACE_PLAN = "Free";
 const DEFAULT_PROJECT_NAME = "New Project";
 const DEFAULT_PROJECT_EMOJI = "📄";
+const STORAGE_SCHEMA_VERSION = 2;
+const STORAGE_SCHEMA_VERSION_KEY = "storageSchemaVersion";
+const MIGRATION_MESSAGE =
+  "This app data still uses the legacy database-backed canvas format. Run the migration script against the revealed app-data directory before opening workspaces in this version.";
 
 type Queryable = Pick<PGlite, "exec" | "query">;
 
@@ -46,15 +53,7 @@ interface ProjectFileRow {
   name: string;
   added_at: number;
   stored_rel_path: string;
-  scene_elements_json: string | null;
-  scene_app_state_json: string | null;
-  scene_files_json: string | null;
-}
-
-interface FileLinkRow {
-  file_id: string;
-  element_id: string;
-  pdf_link_json: string;
+  scene_rel_path: string;
 }
 
 interface AppStateRow {
@@ -62,15 +61,32 @@ interface AppStateRow {
   value_json: string;
 }
 
+interface ColumnRow {
+  column_name: string;
+}
+
+type StorageState =
+  | { kind: "ready" }
+  | { kind: "migration-required"; message: string };
+
 let db: PGlite | null = null;
 let dataRoot = "";
 let pdfDir = "";
+let canvasDir = "";
+let storageState: StorageState = { kind: "ready" };
 
 function requireDb() {
   if (!db) {
     throw new Error("Database has not been initialized");
   }
   return db;
+}
+
+function requireReadyDb() {
+  if (storageState.kind !== "ready") {
+    throw new Error(storageState.message);
+  }
+  return requireDb();
 }
 
 function parseJson<T>(value: string | null, fallback: T): T {
@@ -137,6 +153,25 @@ async function setAppStateValue(target: Queryable, key: string, value: unknown) 
   );
 }
 
+async function getTableNames(target: Queryable) {
+  const result = await target.query<{ table_name: string }>(
+    `SELECT table_name
+     FROM information_schema.tables
+     WHERE table_schema = 'public'`,
+  );
+  return new Set(result.rows.map((row) => row.table_name));
+}
+
+async function getColumnNames(target: Queryable, tableName: string) {
+  const result = await target.query<ColumnRow>(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1`,
+    [tableName],
+  );
+  return new Set(result.rows.map((row) => row.column_name));
+}
+
 async function ensureDefaultWorkspace(target: Queryable) {
   const existingWorkspace = await target.query<Pick<WorkspaceRow, "id">>(
     "SELECT id FROM workspaces ORDER BY created_at ASC LIMIT 1",
@@ -187,17 +222,8 @@ async function ensureSchema(target: Queryable) {
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       stored_rel_path TEXT NOT NULL,
-      added_at BIGINT NOT NULL,
-      scene_elements_json TEXT,
-      scene_app_state_json TEXT,
-      scene_files_json TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS file_links (
-      file_id TEXT NOT NULL REFERENCES project_files(id) ON DELETE CASCADE,
-      element_id TEXT NOT NULL,
-      pdf_link_json TEXT NOT NULL,
-      PRIMARY KEY (file_id, element_id)
+      scene_rel_path TEXT NOT NULL,
+      added_at BIGINT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS app_state (
@@ -211,6 +237,57 @@ async function ensureSchema(target: Queryable) {
   `);
 
   await ensureDefaultWorkspace(target);
+  await setAppStateValue(target, STORAGE_SCHEMA_VERSION_KEY, STORAGE_SCHEMA_VERSION);
+}
+
+async function detectStorageState(target: Queryable): Promise<"fresh" | StorageState> {
+  const tableNames = await getTableNames(target);
+  const hasProjectFiles = tableNames.has("project_files");
+  const hasAppState = tableNames.has("app_state");
+  const hasAnyKnownTables =
+    hasProjectFiles ||
+    tableNames.has("workspaces") ||
+    tableNames.has("projects") ||
+    hasAppState ||
+    tableNames.has("file_links");
+
+  if (!hasAnyKnownTables) {
+    return "fresh";
+  }
+
+  if (!hasProjectFiles || !hasAppState) {
+    return {
+      kind: "migration-required",
+      message: MIGRATION_MESSAGE,
+    };
+  }
+
+  const columnNames = await getColumnNames(target, "project_files");
+  const hasSceneRelPath = columnNames.has("scene_rel_path");
+  const hasLegacySceneColumns =
+    columnNames.has("scene_elements_json") ||
+    columnNames.has("scene_app_state_json") ||
+    columnNames.has("scene_files_json");
+  const hasLegacyLinkTable = tableNames.has("file_links");
+  const schemaVersion = await getAppStateValue<number | null>(
+    target,
+    STORAGE_SCHEMA_VERSION_KEY,
+    null,
+  );
+
+  if (
+    hasSceneRelPath &&
+    !hasLegacySceneColumns &&
+    !hasLegacyLinkTable &&
+    schemaVersion === STORAGE_SCHEMA_VERSION
+  ) {
+    return { kind: "ready" };
+  }
+
+  return {
+    kind: "migration-required",
+    message: MIGRATION_MESSAGE,
+  };
 }
 
 async function getWorkspaceRows(target: Queryable) {
@@ -229,38 +306,45 @@ async function getProjectRows(target: Queryable) {
 
 async function getProjectFileRows(target: Queryable) {
   const result = await target.query<ProjectFileRow>(
-    `SELECT id, project_id, name, added_at, stored_rel_path, scene_elements_json, scene_app_state_json, scene_files_json
+    `SELECT id, project_id, name, added_at, stored_rel_path, scene_rel_path
      FROM project_files
      ORDER BY added_at ASC`,
   );
   return result.rows;
 }
 
-function buildScene(row: ProjectFileRow): StoredScene | null {
-  if (!row.scene_elements_json && !row.scene_app_state_json && !row.scene_files_json) {
-    return null;
+async function readScene(sceneRelPath: string) {
+  try {
+    const raw = await readFile(path.join(canvasDir, sceneRelPath), "utf8");
+    return deserializeSceneDocument(raw);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
   }
-
-  return {
-    elements: parseJson(row.scene_elements_json, [] as unknown[]),
-    appState: parseJson(row.scene_app_state_json, {
-      viewBackgroundColor: "#ffffff",
-      gridSize: 20,
-    }),
-    files: parseJson(row.scene_files_json, {} as StoredScene["files"]),
-  };
 }
 
 export async function initializeDatabase(userDataPath: string) {
   dataRoot = path.join(userDataPath, "app-data");
   pdfDir = path.join(dataRoot, "pdfs");
+  canvasDir = path.join(dataRoot, "canvases");
   const dbDir = path.join(dataRoot, "db");
 
   await mkdir(pdfDir, { recursive: true });
+  await mkdir(canvasDir, { recursive: true });
   await mkdir(dbDir, { recursive: true });
 
   db = await PGlite.create(dbDir);
-  await ensureSchema(db);
+
+  const detectedStorageState = await detectStorageState(db);
+  if (detectedStorageState === "fresh") {
+    await ensureSchema(db);
+    storageState = { kind: "ready" };
+    return;
+  }
+
+  storageState = detectedStorageState;
 }
 
 export async function closeDatabase() {
@@ -270,7 +354,17 @@ export async function closeDatabase() {
 }
 
 export async function bootstrap(): Promise<AppSnapshot> {
-  const target = requireDb();
+  if (storageState.kind !== "ready") {
+    return {
+      workspaces: [],
+      activeWorkspaceId: null,
+      storageStatus: "migration-required",
+      migrationMessage: storageState.message,
+      appDataPath: dataRoot,
+    };
+  }
+
+  const target = requireReadyDb();
   const [workspaceRows, projectRows, fileRows, savedActiveWorkspaceId] = await Promise.all([
     getWorkspaceRows(target),
     getProjectRows(target),
@@ -286,11 +380,14 @@ export async function bootstrap(): Promise<AppSnapshot> {
   return {
     workspaces: mapWorkspaces(workspaceRows, projectRows, fileRows),
     activeWorkspaceId,
+    storageStatus: "ready",
+    migrationMessage: null,
+    appDataPath: dataRoot,
   };
 }
 
 export async function createWorkspace(input: CreateWorkspaceInput) {
-  const target = requireDb();
+  const target = requireReadyDb();
   const workspace: Workspace = {
     id: randomUUID(),
     name: input.name,
@@ -319,12 +416,12 @@ export async function createWorkspace(input: CreateWorkspaceInput) {
 }
 
 export async function setActiveWorkspace(workspaceId: string) {
-  const target = requireDb();
+  const target = requireReadyDb();
   await setAppStateValue(target, "activeWorkspaceId", workspaceId);
 }
 
 export async function createProject(workspaceId: string) {
-  const target = requireDb();
+  const target = requireReadyDb();
   const project: Project = {
     id: randomUUID(),
     name: DEFAULT_PROJECT_NAME,
@@ -342,34 +439,40 @@ export async function createProject(workspaceId: string) {
 }
 
 export async function renameProject(projectId: string, name: string) {
-  const target = requireDb();
+  const target = requireReadyDb();
   await target.query("UPDATE projects SET name = $2 WHERE id = $1", [projectId, name]);
 }
 
 export async function deleteProject(projectId: string) {
-  const target = requireDb();
-  const fileRows = await target.query<Pick<ProjectFileRow, "stored_rel_path">>(
-    "SELECT stored_rel_path FROM project_files WHERE project_id = $1",
+  const target = requireReadyDb();
+  const fileRows = await target.query<Pick<ProjectFileRow, "stored_rel_path" | "scene_rel_path">>(
+    "SELECT stored_rel_path, scene_rel_path FROM project_files WHERE project_id = $1",
     [projectId],
   );
 
   await target.query("DELETE FROM projects WHERE id = $1", [projectId]);
 
   await Promise.all(
-    fileRows.rows.map(async ({ stored_rel_path: storedRelPath }) => {
-      try {
-        await rm(path.join(pdfDir, storedRelPath), { force: true });
-      } catch (error) {
+    fileRows.rows.flatMap(({ stored_rel_path: storedRelPath, scene_rel_path: sceneRelPath }) => [
+      rm(path.join(pdfDir, storedRelPath), { force: true }).catch((error) => {
         console.error("Failed to delete stored PDF after project deletion", error);
-      }
-    }),
+      }),
+      rm(path.join(canvasDir, sceneRelPath), { force: true }).catch((error) => {
+        console.error("Failed to delete stored canvas after project deletion", error);
+      }),
+    ]),
   );
 }
 
-export async function importPdf(input: ImportPdfInput) {
-  const target = requireDb();
+export async function importPdf(input: {
+  projectId: string;
+  name: string;
+  bytes: ArrayBuffer;
+}) {
+  const target = requireReadyDb();
   const fileId = randomUUID();
   const storedRelPath = `${fileId}.pdf`;
+  const sceneRelPath = `${fileId}.excalidraw`;
   const fullPath = path.join(pdfDir, storedRelPath);
   const projectFile: ProjectFile = {
     id: fileId,
@@ -380,9 +483,16 @@ export async function importPdf(input: ImportPdfInput) {
   try {
     await writeFile(fullPath, Buffer.from(input.bytes));
     await target.query(
-      `INSERT INTO project_files (id, project_id, name, stored_rel_path, added_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [projectFile.id, input.projectId, projectFile.name, storedRelPath, projectFile.addedAt],
+      `INSERT INTO project_files (id, project_id, name, stored_rel_path, scene_rel_path, added_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        projectFile.id,
+        input.projectId,
+        projectFile.name,
+        storedRelPath,
+        sceneRelPath,
+        projectFile.addedAt,
+      ],
     );
   } catch (error) {
     await rm(fullPath, { force: true }).catch(() => undefined);
@@ -393,7 +503,7 @@ export async function importPdf(input: ImportPdfInput) {
 }
 
 export async function renamePdf(projectId: string, fileId: string, name: string) {
-  const target = requireDb();
+  const target = requireReadyDb();
   await target.query(
     "UPDATE project_files SET name = $3 WHERE id = $1 AND project_id = $2",
     [fileId, projectId, name],
@@ -401,31 +511,37 @@ export async function renamePdf(projectId: string, fileId: string, name: string)
 }
 
 export async function deletePdf(projectId: string, fileId: string) {
-  const target = requireDb();
-  const result = await target.query<Pick<ProjectFileRow, "stored_rel_path">>(
-    "SELECT stored_rel_path FROM project_files WHERE id = $1 AND project_id = $2",
+  const target = requireReadyDb();
+  const result = await target.query<Pick<ProjectFileRow, "stored_rel_path" | "scene_rel_path">>(
+    "SELECT stored_rel_path, scene_rel_path FROM project_files WHERE id = $1 AND project_id = $2",
     [fileId, projectId],
   );
 
   const storedRelPath = result.rows[0]?.stored_rel_path;
+  const sceneRelPath = result.rows[0]?.scene_rel_path;
   await target.query("DELETE FROM project_files WHERE id = $1 AND project_id = $2", [
     fileId,
     projectId,
   ]);
 
-  if (!storedRelPath) return;
-
-  try {
-    await rm(path.join(pdfDir, storedRelPath), { force: true });
-  } catch (error) {
-    console.error("Failed to delete stored PDF", error);
-  }
+  await Promise.all([
+    storedRelPath
+      ? rm(path.join(pdfDir, storedRelPath), { force: true }).catch((error) => {
+          console.error("Failed to delete stored PDF", error);
+        })
+      : Promise.resolve(),
+    sceneRelPath
+      ? rm(path.join(canvasDir, sceneRelPath), { force: true }).catch((error) => {
+          console.error("Failed to delete stored canvas", error);
+        })
+      : Promise.resolve(),
+  ]);
 }
 
 export async function openWorkspace(fileId: string): Promise<WorkspaceData> {
-  const target = requireDb();
+  const target = requireReadyDb();
   const fileResult = await target.query<ProjectFileRow>(
-    `SELECT id, project_id, name, added_at, stored_rel_path, scene_elements_json, scene_app_state_json, scene_files_json
+    `SELECT id, project_id, name, added_at, stored_rel_path, scene_rel_path
      FROM project_files
      WHERE id = $1`,
     [fileId],
@@ -436,53 +552,43 @@ export async function openWorkspace(fileId: string): Promise<WorkspaceData> {
     throw new Error(`Unknown file id: ${fileId}`);
   }
 
-  const linkRows = await target.query<FileLinkRow>(
-    "SELECT file_id, element_id, pdf_link_json FROM file_links WHERE file_id = $1",
-    [fileId],
-  );
-
-  const pdfBytes = await readFile(path.join(pdfDir, fileRow.stored_rel_path));
+  const [pdfBytes, scene] = await Promise.all([
+    readFile(path.join(pdfDir, fileRow.stored_rel_path)),
+    readScene(fileRow.scene_rel_path),
+  ]);
 
   return {
     pdfBytes: pdfBytes.buffer.slice(
       pdfBytes.byteOffset,
       pdfBytes.byteOffset + pdfBytes.byteLength,
     ),
-    links: linkRows.rows.map((row) => ({
-      elementId: row.element_id,
-      pdfLink: parseJson(row.pdf_link_json, null as LinkEntry["pdfLink"] | null)!,
-    })),
-    scene: buildScene(fileRow),
+    links: extractLinksFromScene(scene),
+    scene,
   };
 }
 
-export async function saveLinks(fileId: string, links: LinkEntry[]) {
-  const target = requireDb();
-  await target.query("DELETE FROM file_links WHERE file_id = $1", [fileId]);
-
-  for (const link of links) {
-    await target.query(
-      "INSERT INTO file_links (file_id, element_id, pdf_link_json) VALUES ($1, $2, $3)",
-      [fileId, link.elementId, JSON.stringify(link.pdfLink)],
-    );
-  }
-}
-
 export async function saveScene(fileId: string, scene: StoredScene | null) {
-  const target = requireDb();
-  await target.query(
-    `UPDATE project_files
-     SET scene_elements_json = $2,
-         scene_app_state_json = $3,
-         scene_files_json = $4
-     WHERE id = $1`,
-    [
-      fileId,
-      scene ? JSON.stringify(scene.elements) : null,
-      scene ? JSON.stringify(scene.appState) : null,
-      scene ? JSON.stringify(scene.files) : null,
-    ],
+  const target = requireReadyDb();
+  const result = await target.query<Pick<ProjectFileRow, "scene_rel_path">>(
+    "SELECT scene_rel_path FROM project_files WHERE id = $1",
+    [fileId],
   );
+  const sceneRelPath = result.rows[0]?.scene_rel_path;
+
+  if (!sceneRelPath) {
+    throw new Error(`Unknown file id: ${fileId}`);
+  }
+
+  const fullPath = path.join(canvasDir, sceneRelPath);
+
+  if (!scene) {
+    await rm(fullPath, { force: true }).catch((error) => {
+      console.error("Failed to remove empty canvas file", error);
+    });
+    return;
+  }
+
+  await writeFile(fullPath, serializeSceneDocument(scene), "utf8");
 }
 
 export function getDataRoot() {

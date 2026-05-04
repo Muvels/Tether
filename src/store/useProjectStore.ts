@@ -19,6 +19,9 @@ interface ProjectState {
   activeProjectId: string | null;
   activeFileId: string | null;
   openTabs: OpenTab[];
+  storageStatus: "ready" | "migration-required";
+  migrationMessage: string | null;
+  appDataPath: string | null;
   isHydrated: boolean;
 
   bootstrap: () => Promise<void>;
@@ -112,6 +115,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   activeProjectId: null,
   activeFileId: null,
   openTabs: [],
+  storageStatus: "ready",
+  migrationMessage: null,
+  appDataPath: null,
   isHydrated: false,
 
   bootstrap: async () => {
@@ -125,6 +131,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       activeProjectId: projects[0]?.id ?? null,
       activeFileId: null,
       openTabs: [],
+      storageStatus: snapshot.storageStatus,
+      migrationMessage: snapshot.migrationMessage,
+      appDataPath: snapshot.appDataPath,
       isHydrated: true,
     });
   },

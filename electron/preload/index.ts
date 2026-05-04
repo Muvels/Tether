@@ -5,7 +5,6 @@ import type {
   DeletePdfInput,
   DesktopApi,
   ImportPdfInput,
-  LinkEntry,
   Project,
   ProjectFile,
   RenamePdfInput,
@@ -43,8 +42,6 @@ const desktopApi: DesktopApi = {
       pdfBytes: workspace.pdfBytes,
     };
   },
-  saveLinks: (fileId: string, links: LinkEntry[]) =>
-    ipcRenderer.invoke("workspace:save-links", fileId, links),
   saveScene: (fileId: string, scene: StoredScene | null) =>
     ipcRenderer.invoke("workspace:save-scene", fileId, scene),
 };

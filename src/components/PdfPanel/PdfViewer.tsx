@@ -121,6 +121,8 @@ function PdfDocumentView({
     return offsets;
   }, [defaultPageHeight, numPages, pageHeights]);
 
+  // TanStack Virtual exposes non-memoizable functions, so opt this hook out locally.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: numPages,
     getScrollElement: () => scrollRef.current,
