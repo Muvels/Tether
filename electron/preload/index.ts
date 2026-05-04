@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  AppInfo,
   AppSnapshot,
   CreateWorkspaceInput,
   DeletePdfInput,
@@ -10,12 +11,27 @@ import type {
   RenamePdfInput,
   RenameProjectInput,
   StoredScene,
+  UpdateState,
   Workspace,
   WorkspaceData,
 } from "../../src/types";
 
+const UPDATE_EVENT_CHANNEL = "app:update-state";
+
 const desktopApi: DesktopApi = {
   bootstrap: () => ipcRenderer.invoke("app:bootstrap") as Promise<AppSnapshot>,
+  getAppInfo: () => ipcRenderer.invoke("app:get-info") as Promise<AppInfo>,
+  checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates") as Promise<void>,
+  downloadUpdate: () => ipcRenderer.invoke("app:download-update") as Promise<void>,
+  quitAndInstallUpdate: () => ipcRenderer.invoke("app:quit-and-install-update") as Promise<void>,
+  onUpdateStateChanged: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: UpdateState) => callback(state);
+    ipcRenderer.on(UPDATE_EVENT_CHANNEL, listener);
+    void ipcRenderer
+      .invoke("app:get-update-state")
+      .then((state: UpdateState) => callback(state));
+    return () => ipcRenderer.removeListener(UPDATE_EVENT_CHANNEL, listener);
+  },
   setActiveWorkspace: (workspaceId: string) =>
     ipcRenderer.invoke("app:set-active-workspace", workspaceId),
   createWorkspace: (input: CreateWorkspaceInput) =>

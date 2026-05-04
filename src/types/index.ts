@@ -71,6 +71,48 @@ export interface AppSnapshot {
   appDataPath: string;
 }
 
+export type DesktopPlatform =
+  | "aix"
+  | "android"
+  | "darwin"
+  | "freebsd"
+  | "haiku"
+  | "linux"
+  | "openbsd"
+  | "sunos"
+  | "win32"
+  | "cygwin"
+  | "netbsd";
+
+export interface AppInfo {
+  version: string;
+  platform: DesktopPlatform;
+  isPackaged: boolean;
+}
+
+export type UpdateStatus =
+  | "idle"
+  | "unsupported"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "up-to-date"
+  | "error";
+
+export interface UpdateState {
+  status: UpdateStatus;
+  message: string | null;
+  availableVersion: string | null;
+  downloadedVersion: string | null;
+  releaseDate: string | null;
+  releaseNotes: string | null;
+  progressPercent: number | null;
+  bytesPerSecond: number | null;
+  transferredBytes: number | null;
+  totalBytes: number | null;
+}
+
 export interface WorkspaceData {
   pdfBytes: ArrayBuffer;
   links: LinkEntry[];
@@ -112,6 +154,11 @@ export interface CreateWorkspaceInput {
 
 export interface DesktopApi {
   bootstrap: () => Promise<AppSnapshot>;
+  getAppInfo: () => Promise<AppInfo>;
+  checkForUpdates: () => Promise<void>;
+  downloadUpdate: () => Promise<void>;
+  quitAndInstallUpdate: () => Promise<void>;
+  onUpdateStateChanged: (callback: (state: UpdateState) => void) => () => void;
   setActiveWorkspace: (workspaceId: string) => Promise<void>;
   createWorkspace: (input: CreateWorkspaceInput) => Promise<Workspace>;
   createProject: (workspaceId: string) => Promise<Project>;

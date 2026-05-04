@@ -16,13 +16,22 @@ import {
   saveScene,
   setActiveWorkspace,
 } from "./database";
+import { AppUpdaterService } from "./updater";
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const IS_DEV = Boolean(DEV_SERVER_URL);
 const approvedCloseWindows = new WeakSet<BrowserWindow>();
+const appUpdater = new AppUpdaterService();
 
 function registerIpcHandlers() {
   ipcMain.handle("app:bootstrap", () => bootstrap());
+  ipcMain.handle("app:get-info", () => appUpdater.getAppInfo());
+  ipcMain.handle("app:get-update-state", () => appUpdater.getState());
+  ipcMain.handle("app:check-for-updates", () => appUpdater.checkForUpdates());
+  ipcMain.handle("app:download-update", () => appUpdater.downloadUpdate());
+  ipcMain.handle("app:quit-and-install-update", () => {
+    appUpdater.quitAndInstall();
+  });
   ipcMain.handle("app:set-active-workspace", (_event, workspaceId: string) =>
     setActiveWorkspace(workspaceId),
   );
@@ -90,6 +99,10 @@ async function createMainWindow() {
   } else {
     await window.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
   }
+
+  window.webContents.once("did-finish-load", () => {
+    appUpdater.scheduleStartupCheck();
+  });
 
   window.on("close", (event) => {
     if (approvedCloseWindows.has(window)) {

@@ -16,6 +16,8 @@ import { cn } from "@/lib/utils"
 import { CheckIcon } from "lucide-react"
 import { WORKSPACE_ICON_OPTIONS } from "@/lib/workspace-icons"
 
+
+// TODO: Consider allowing users to pick custom colors in the future, but for now we can just offer a predefined set of colors that look good with the icons and the app's theme.
 const COLOR_OPTIONS: { id: string; label: string; value: string }[] = [
   { id: "slate", label: "Slate", value: "#64748b" },
   { id: "red", label: "Red", value: "#ef4444" },
