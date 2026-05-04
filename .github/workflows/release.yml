@@ -54,12 +54,20 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.MAINTAINANCE_GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.APPLE_SIGNING_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_CERTIFICATE: ${{ secrets.APPLE_SIGNING_CERTIFICATE }}
+          APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          if [[ -n "${APPLE_SIGNING_CERTIFICATE}" ]]; then
+            export CSC_LINK="${APPLE_SIGNING_CERTIFICATE}"
+          fi
+
+          if [[ -n "${APPLE_SIGNING_CERTIFICATE_PASSWORD}" ]]; then
+            export CSC_KEY_PASSWORD="${APPLE_SIGNING_CERTIFICATE_PASSWORD}"
+          fi
+
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             pnpm run build
             pnpm exec electron-builder --publish always ${{ matrix.build_args }}
